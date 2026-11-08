@@ -8,6 +8,7 @@ import { telemetryStatsApi } from "./routes/telemetry.js";
 import { bemaxApi, compatibilityApi } from "./bemax.js";
 import { createEdgeRuntime } from "./runtime.js";
 import { streamTokenApi } from "./stream.js";
+import { maxSimApi } from "./max-sim.js";
 import type { Env } from "./types.js";
 export { ProductFactoryActor } from "./factory.js";
 export { MicrokernelProcessActor } from "./kernel.js";
@@ -129,8 +130,9 @@ export default {
 
       const compat = path.startsWith("/api/bemax") || path.startsWith("/api/providers") || path.startsWith("/api/governor") || path.startsWith("/api/uss")
         ? await compatibilityApi(request, env) : null;
+      const maxSim = await maxSimApi(request, env);
       const upstream = path === "/api/session" ? Response.json(access)
-        : compat ?? (path.startsWith("/api/bemax")
+        : compat ?? maxSim ?? (path.startsWith("/api/bemax")
           ? (await bemaxApi(request, env)) ?? (await routeApi(request, env))
           : !path.startsWith("/api/") || path.startsWith("/api/kernel/")
             ? await kernel.fetch(request, env, ctx) : await routeApi(request, env));
