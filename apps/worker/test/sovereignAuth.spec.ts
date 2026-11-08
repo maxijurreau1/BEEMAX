@@ -9,10 +9,20 @@ describe("sovereignAuth Middleware", () => {
   const publicKeyHex = bytesToHex(ed25519.getPublicKey(privateKeyBytes));
   const testIdentity = "maxjurreau-3";
   let mockLicenseRecord: { tier: string; expires_at: number | null } | null = null;
+  let usedNonces = new Set<string>();
 
-  const mockPrepare = vi.fn().mockImplementation((_query: string) => ({
-    bind: vi.fn().mockImplementation((..._params: unknown[]) => ({
+  const mockPrepare = vi.fn().mockImplementation((query: string) => ({
+    bind: vi.fn().mockImplementation((...params: unknown[]) => ({
       first: vi.fn().mockImplementation(async () => mockLicenseRecord),
+      run: vi.fn().mockImplementation(async () => {
+        if (query.includes("INSERT INTO sovereign_nonces")) {
+          const reqId = String(params[0]);
+          if (usedNonces.has(reqId)) return { meta: { changes: 0 } };
+          usedNonces.add(reqId);
+          return { meta: { changes: 1 } };
+        }
+        return { meta: { changes: 0 } };
+      }),
     })),
   }));
   const mockDb = { prepare: mockPrepare } as unknown as D1Database;
@@ -25,6 +35,7 @@ describe("sovereignAuth Middleware", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLicenseRecord = null;
+    usedNonces = new Set();
   });
 
   function createSignedHeaders(url: string, timestamp: string, identity: string, signingKey = privateKeyBytes) {
@@ -57,6 +68,14 @@ describe("sovereignAuth Middleware", () => {
     expect(mockPrepare).not.toHaveBeenCalled();
   });
 
+  it("rejects malformed timestamps rather than parsing a numeric prefix", async () => {
+    const url = "https://beemax.internal/api/manifold/compute";
+    const request = new Request(url, { headers: createSignedHeaders(url, "123abc", testIdentity) });
+    const result = await verifySovereignAccess(request, mockEnv);
+    expect(result.authorized).toBe(false);
+    expect(result.tier).toBe("expired_timestamp");
+  });
+
   it("rejects timestamps outside the five-minute replay window", async () => {
     const timestamp = String(Date.now() - 300001);
     const url = "https://beemax.internal/api/manifold/compute";
@@ -75,7 +94,7 @@ describe("sovereignAuth Middleware", () => {
     expect(result.tier).toBe("unconfigured_environment");
   });
 
-  it("rejects an invalid Ed25519 signature", async () => {
+  it("rejects an invalid Ed25519 signature without consuming a replay key", async () => {
     const url = "https://beemax.internal/api/manifold/compute";
     const timestamp = String(Date.now());
     const wrongKey = ed25519.utils.randomPrivateKey();
@@ -83,6 +102,7 @@ describe("sovereignAuth Middleware", () => {
     const result = await verifySovereignAccess(request, mockEnv);
     expect(result.authorized).toBe(false);
     expect(result.tier).toBe("invalid_signature");
+    expect(mockPrepare.mock.calls.some(([query]) => String(query).includes("INSERT INTO sovereign_nonces"))).toBe(false);
   });
 
   it("rejects a valid signature when no D1 license exists", async () => {
@@ -105,13 +125,15 @@ describe("sovereignAuth Middleware", () => {
     expect(result.tier).toBe("license_expired");
   });
 
-  it("authorizes a valid signature and active timed license", async () => {
+  it("authorizes a valid signature and active timed license once", async () => {
     mockLicenseRecord = { tier: "sovereign", expires_at: Date.now() + 86400000 };
     const url = "https://beemax.internal/api/manifold/compute";
     const timestamp = String(Date.now());
     const request = new Request(url, { headers: createSignedHeaders(url, timestamp, testIdentity) });
     const result = await verifySovereignAccess(request, mockEnv);
     expect(result).toEqual({ authorized: true, tier: "sovereign", identity: testIdentity });
+    const replay = await verifySovereignAccess(request, mockEnv);
+    expect(replay).toEqual({ authorized: false, tier: "nonce_reused", identity: testIdentity });
   });
 
   it.each([null, 0])("authorizes a lifetime license with expires_at=%s", async (expires_at) => {
@@ -121,5 +143,18 @@ describe("sovereignAuth Middleware", () => {
     const request = new Request(url, { headers: createSignedHeaders(url, timestamp, testIdentity) });
     const result = await verifySovereignAccess(request, mockEnv);
     expect(result).toEqual({ authorized: true, tier: "enterprise", identity: testIdentity });
+  });
+
+  it("rejects request bodies larger than the auth limit", async () => {
+    const url = "https://beemax.internal/api/manifold/compute";
+    const timestamp = String(Date.now());
+    const request = new Request(url, {
+      method: "POST",
+      headers: createSignedHeaders(url, timestamp, testIdentity),
+      body: "x".repeat(16_385),
+    });
+    const result = await verifySovereignAccess(request, mockEnv);
+    expect(result).toEqual({ authorized: false, tier: "request_too_large", identity: testIdentity });
+    expect(mockPrepare).not.toHaveBeenCalled();
   });
 });
