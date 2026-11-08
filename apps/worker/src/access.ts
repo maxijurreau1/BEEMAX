@@ -11,12 +11,12 @@ interface AutomationIdentity {
 }
 const roles: StaffRole[] = ["Governor", "Admin", "Operator", "Read Only"];
 const DEV_BYPASS_TOKEN = "dev-bypass";
-const BOOTSTRAP_TOKENS = [
-  { id: "governor", role: "Governor" as const, token: "portal-os1-governor" },
-  { id: "admin", role: "Admin" as const, token: "portal-os1-admin" },
-  { id: "operator", role: "Operator" as const, token: "portal-os1-operator" },
-  { id: "readonly", role: "Read Only" as const, token: "portal-os1-readonly" },
-];
+
+type StaffCredential = { id: string; role: StaffRole; tokenSha256: string };
+
+function isProduction(env: Env): boolean {
+  return [env.ENV, env.ENVIRONMENT].some((value) => value?.toLowerCase() === "production");
+}
 
 function isLocalDevelopmentRequest(request: Request): boolean {
   const hostname = new URL(request.url).hostname;
@@ -38,14 +38,33 @@ function equal(a: string, b: string) {
   return diff === 0;
 }
 
-async function bootstrapStaffIdentity(token: string): Promise<StaffIdentity | null> {
-  const digest = await sha256(token);
-  for (const entry of BOOTSTRAP_TOKENS) {
-    if (equal(digest, await sha256(entry.token))) {
-      return { id: entry.id, role: entry.role };
+function parseStaffCredentials(value: string | undefined): StaffCredential[] | null {
+  if (!value?.trim()) return null;
+  try {
+    const configured: unknown = JSON.parse(value);
+    if (!Array.isArray(configured) || configured.length === 0 || configured.length > 100) return null;
+    const result: StaffCredential[] = [];
+    for (const entry of configured) {
+      if (
+        !entry ||
+        typeof entry.id !== "string" ||
+        entry.id.trim().length === 0 ||
+        entry.id.length > 120 ||
+        typeof entry.role !== "string" ||
+        !roles.includes(entry.role as StaffRole) ||
+        typeof entry.tokenSha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(entry.tokenSha256)
+      ) return null;
+      result.push({ id: entry.id, role: entry.role as StaffRole, tokenSha256: entry.tokenSha256 });
     }
+    return result;
+  } catch {
+    return null;
   }
-  return null;
+}
+
+function hasStaffConfiguration(env: Env): boolean {
+  return Boolean(env.GOVERNOR_API_TOKEN?.trim()) || parseStaffCredentials(env.STAFF_CREDENTIALS) !== null;
 }
 
 export async function staffIdentity(
@@ -55,62 +74,54 @@ export async function staffIdentity(
   const header = request.headers.get("Authorization") ?? "";
   if (!header.startsWith("Bearer ") || header.length > 4096) return null;
   const token = header.slice(7);
+  if (!token.trim()) return null;
 
   if (
     token === DEV_BYPASS_TOKEN &&
+    !isProduction(env) &&
     isLocalDevelopmentRequest(request) &&
-    !env.GOVERNOR_API_TOKEN &&
-    !env.STAFF_CREDENTIALS
+    !env.GOVERNOR_API_TOKEN?.trim() &&
+    !env.STAFF_CREDENTIALS?.trim()
   ) {
     return { id: "dev-bypass", role: "Governor" };
   }
 
   const digest = await sha256(token);
   if (
-    env.GOVERNOR_API_TOKEN &&
+    env.GOVERNOR_API_TOKEN?.trim() &&
     equal(digest, await sha256(env.GOVERNOR_API_TOKEN))
-  )
+  ) {
     return { id: "governor", role: "Governor" };
-
-  if (!env.STAFF_CREDENTIALS) {
-    return bootstrapStaffIdentity(token);
   }
 
-  let configured: unknown;
-  try {
-    configured = JSON.parse(env.STAFF_CREDENTIALS);
-  } catch {
-    return bootstrapStaffIdentity(token);
-  }
-  if (!Array.isArray(configured) || configured.length > 100) return bootstrapStaffIdentity(token);
+  const configured = parseStaffCredentials(env.STAFF_CREDENTIALS);
+  if (!configured) return null;
   for (const entry of configured) {
-    if (
-      entry &&
-      typeof entry.id === "string" &&
-      entry.id.length <= 120 &&
-      roles.includes(entry.role) &&
-      typeof entry.tokenSha256 === "string" &&
-      /^[a-f0-9]{64}$/.test(entry.tokenSha256) &&
-      equal(digest, entry.tokenSha256)
-    )
+    if (equal(digest, entry.tokenSha256)) {
       return { id: entry.id, role: entry.role };
+    }
   }
-  return bootstrapStaffIdentity(token);
+  return null;
 }
+
 export async function protectPortal(
   request: Request,
   env: Env,
 ): Promise<StaffIdentity | AutomationIdentity | Response> {
-  const hasDirectBootstrap = Boolean(
-    env.GOVERNOR_API_TOKEN || env.STAFF_CREDENTIALS || env.AUTOMATION_CREDENTIALS,
-  );
-  if (!hasDirectBootstrap) {
-    const identity = await staffIdentity(request, env);
-    if (identity) return identity;
+  const identity = await staffIdentity(request, env);
+  if (identity) {
+    const path = new URL(request.url).pathname;
+    const governorOnly =
+      request.method !== "GET" || ["/api/decisions"].includes(path);
+    if (governorOnly && identity.role !== "Governor")
+      return Response.json(
+        { error: "Governor permission required" },
+        { status: 403 },
+      );
+    return identity;
   }
 
-  const identity = await staffIdentity(request, env);
-  if (!identity && env.AUTOMATION_CREDENTIALS) {
+  if (env.AUTOMATION_CREDENTIALS) {
     let configured: unknown;
     try {
       configured = JSON.parse(env.AUTOMATION_CREDENTIALS);
@@ -124,52 +135,49 @@ export async function protectPortal(
       header.startsWith("Bearer ") &&
       header.length <= 4096
     ) {
-      const digest = await sha256(header.slice(7));
-      for (const entry of configured) {
-        if (
-          entry &&
-          typeof entry.id === "string" &&
-          entry.id.length > 0 &&
-          entry.id.length <= 120 &&
-          typeof entry.tokenSha256 === "string" &&
-          /^[a-f0-9]{64}$/.test(entry.tokenSha256) &&
-          equal(digest, entry.tokenSha256)
-        ) {
-          const path = new URL(request.url).pathname;
-          const scope =
-            path === "/api/twin/telemetry"
-              ? "telemetry:write"
-              : path === "/api/twin/relationships" ||
-                  /^\/api\/twin\/relationships\/[^/]+\/retire$/.test(path)
-                ? "relationships:write"
-                : null;
+      const token = header.slice(7);
+      if (token.trim()) {
+        const digest = await sha256(token);
+        for (const entry of configured) {
           if (
-            request.method === "POST" &&
-            scope &&
-            Array.isArray(entry.scopes) &&
-            entry.scopes.includes(scope)
-          )
-            return { id: entry.id, role: "Automation" };
-          return Response.json(
-            { error: "Automation scope does not permit this request" },
-            { status: 403 },
-          );
+            entry &&
+            typeof entry.id === "string" &&
+            entry.id.length > 0 &&
+            entry.id.length <= 120 &&
+            typeof entry.tokenSha256 === "string" &&
+            /^[a-f0-9]{64}$/.test(entry.tokenSha256) &&
+            equal(digest, entry.tokenSha256)
+          ) {
+            const path = new URL(request.url).pathname;
+            const scope =
+              path === "/api/twin/telemetry"
+                ? "telemetry:write"
+                : path === "/api/twin/relationships" ||
+                    /^\/api\/twin\/relationships\/[^/]+\/retire$/.test(path)
+                  ? "relationships:write"
+                  : null;
+            if (
+              request.method === "POST" &&
+              scope &&
+              Array.isArray(entry.scopes) &&
+              entry.scopes.includes(scope)
+            )
+              return { id: entry.id, role: "Automation" };
+            return Response.json(
+              { error: "Automation scope does not permit this request" },
+              { status: 403 },
+            );
+          }
         }
       }
     }
   }
-  if (!identity)
-    return Response.json({ error: "Staff sign-in required" }, { status: 401 });
-  const path = new URL(request.url).pathname;
-  const governorOnly =
-    request.method !== "GET" || ["/api/decisions"].includes(path);
-  if (governorOnly && identity.role !== "Governor")
-    return Response.json(
-      { error: "Governor permission required" },
-      { status: 403 },
-    );
-  return identity;
+
+  if (isProduction(env) && !hasStaffConfiguration(env))
+    return Response.json({ error: "Portal auth is not configured" }, { status: 503 });
+  return Response.json({ error: "Staff sign-in required" }, { status: 401 });
 }
+
 export async function auditAccess(
   env: Env,
   request: Request,
