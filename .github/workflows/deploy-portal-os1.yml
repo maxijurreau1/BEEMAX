@@ -2,10 +2,22 @@ name: Deploy Portal-OS1
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_marketplace:
+        description: Deploy the public marketplace worker/pages as part of this run
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
-  deploy:
+  validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,26 +37,45 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Check D1 migrations
-        run: npx wrangler d1 migrations list DB --remote --config wrangler.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Validate private Worker config
+        run: npx wrangler deploy --dry-run --config wrangler.toml
+
+      - name: Validate marketplace config
+        run: npx wrangler deploy --dry-run --config wrangler.marketplace.toml
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply DB --remote --config wrangler.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Deploy Worker
+      - name: Deploy private Worker
         run: npx wrangler deploy --config wrangler.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Deploy Pages
+      - name: Deploy private Pages app
         run: npm run deploy:pages
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy marketplace Worker
+        if: ${{ inputs.deploy_marketplace == true }}
+        run: npx wrangler deploy --config wrangler.marketplace.toml
+
+      - name: Deploy marketplace Pages app
+        if: ${{ inputs.deploy_marketplace == true }}
+        run: npm run deploy:marketplace:pages
