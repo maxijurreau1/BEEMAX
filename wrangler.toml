@@ -10,11 +10,6 @@ ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://portal-os
 ICVS_ENABLED = "true"
 MAX_PROCESS_HEAP_BYTES = 2097152 # 2MB Hard Cap
 
-[assets]
-directory = "./apps/pages/dist"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "planetary-max-db"
@@ -39,6 +34,11 @@ storage = "sqlite"
 [exports.InstantSpaceDurableObject]
 type = "durable-object"
 storage = "sqlite"
+
+[assets]
+directory = "./apps/pages/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
 
 [triggers]
 crons = ["* * * * *"]

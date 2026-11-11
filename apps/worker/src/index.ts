@@ -2,6 +2,8 @@ import { Hono, type MiddlewareHandler } from 'hono'
 
 type Bindings = {
   DB: D1Database;
+  ASSETS: Fetcher;
+  GOVERNOR_API_TOKEN?: string;
   QAL_SECRET?: string;
   CF_CONNECTING_IP?: string;
 }
@@ -22,7 +24,7 @@ const publicRateLimiter: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   if (recentRequests.length >= 30) {
     rateLimitRequests.set(clientIp, recentRequests)
-    return c.json({ error: 'Rate limit exceeded. Please try again later.' },  429)
+    return c.json({ error: 'Rate limit exceeded. Please try again later.' }, 429)
   }
 
   recentRequests.push(now)
@@ -139,6 +141,14 @@ app.post('/api/catalog/mint', qalAuthMiddleware, async (c) => {
     return c.json({ success: false, error: 'Internal server error during catalog item creation' }, 500)
   }
 })
+
+// Catch unmatched API requests before the asset fallback. Public API routes above
+// remain public; protected routes enforce their own route-scoped authentication.
+app.all('/api', (c) => c.json({ error: 'API route not found' }, 404))
+app.all('/api/*', (c) => c.json({ error: 'API route not found' }, 404))
+
+// Serve the built frontend for page routes and static assets.
+app.all('*', async (c) => c.env.ASSETS.fetch(c.req.raw))
 
 export { MicrokernelProcessActor } from './kernel'
 export { ProductFactoryActor } from './factory'
