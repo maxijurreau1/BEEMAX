@@ -1,7 +1,7 @@
 name = "market-place"
 main = "apps/worker/src/marketplace-worker.ts"
 compatibility_date = "2026-04-01"
-account_id = "cfbebee3f0343be6fb2ed557bd4da8a1"
+account_id = "0b81b8c4e766ceb27fc7ed55c06d857e"
 # No custom-domain route is configured: the API is served on workers.dev and
 # the Pages build calls it via VITE_API_BASE.
 
