@@ -1,154 +1,119 @@
-import { captureIntelligence } from "./universe-api.js";
-import { reconcileCompensation } from "./execution.js";
-import { protectPortal, auditAccess } from "./access.js";
-import { verifySovereignAccess } from "./middleware/sovereignAuth.js";
-import kernel from "./kernel.js";
-import { routeApi } from "./routes/api.js";
-import { telemetryStatsApi } from "./routes/telemetry.js";
-import { bemaxApi, compatibilityApi } from "./bemax.js";
-import { createEdgeRuntime } from "./runtime.js";
-import { streamTokenApi } from "./stream.js";
-import { maxSimApi } from "./max-sim.js";
-import type { Env } from "./types.js";
-export { ProductFactoryActor } from "./factory.js";
-export { MicrokernelProcessActor } from "./kernel.js";
-export { InstantSpaceDurableObject } from "./InstantSpaceDurableObject.js";
+import { Hono } from 'hono'
 
-export default {
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(captureIntelligence(env));
-    ctx.waitUntil(reconcileCompensation(env));
-    ctx.waitUntil((async () => {
-      if (!env.FACTORY_ACTOR) return;
-      const ideas = await env.DB.prepare(
-        `SELECT p.id FROM products p WHERE (p.stage IN ('Idea','Discovery','Validation') OR
-        (p.stage='Build' AND EXISTS (SELECT 1 FROM factory_runs r WHERE r.product_id=p.id AND r.status IN ('running','blocked'))))
-        AND length(trim(p.description)) >= 20 AND length(trim(p.name)) >= 2
-        AND NOT EXISTS (SELECT 1 FROM workflow_events e WHERE e.product_id=p.id)
-        ORDER BY p.updated_at,p.id LIMIT 50`,
-      ).all<{ id: string }>();
-      await Promise.all(ideas.results.map(async ({ id }) => {
-        const response = await env.FACTORY_ACTOR!.get(env.FACTORY_ACTOR!.idFromName(id))
-          .fetch("https://factory.internal/run", { method: "POST", body: JSON.stringify({ productId: id }) });
-        if (!response.ok) throw new Error(`ICVS reconciliation failed: ${response.status}`);
-      }));
-    })());
-  },
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const path = new URL(request.url).pathname;
-    const origin = request.headers.get("Origin");
-    const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim());
-    const headers = new Headers({ Vary: "Origin", "Cache-Control": "no-store" });
-    if (origin && allowed.includes(origin)) {
-      headers.set("Access-Control-Allow-Origin", origin);
-      headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-QAL-Signature, X-QAL-Timestamp, X-QAL-Identity");
-    }
-    if (origin && !allowed.includes(origin))
-      return Response.json({ error: "Origin not allowed" }, { status: 403, headers });
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+type Bindings = {
+  DB: D1Database;
+  QAL_SECRET: string;
+  CF_CONNECTING_IP?: string;
+}
 
-    if (path === "/api/space/ws") {
-      if (request.method !== "GET") return new Response("Method not allowed", { status: 405, headers });
-      if (!env.INSTANT_SPACE) return Response.json({ error: "Spatial sync unavailable" }, { status: 503, headers });
-      if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
-        return new Response("Expected Upgrade: websocket", { status: 426, headers });
-      const objectId = env.INSTANT_SPACE.idFromName("portal-os1-spatial-space");
-      return env.INSTANT_SPACE.get(objectId).fetch(request);
+const app = new Hono<{ Bindings: Bindings }>()
+
+// ==========================================
+// 1. RATE LIMITING MIDDLEWARE (Public API)
+// ==========================================
+const publicRateLimiter = async (c: any, next: any) => {
+  const clientIp = c.req.header('CF-Connecting-IP') || '127.0.0.1'
+  const now = Math.floor(Date.now() / 1000)
+  const windowStart = now - 60 // 1-minute sliding window
+
+  try {
+    await c.env.DB.prepare(
+      `DELETE FROM rate_limits WHERE timestamp < ?`
+    ).bind(windowStart).run()
+
+    const { results } = await c.env.DB.prepare(
+      `SELECT COUNT(*) as count FROM rate_limits WHERE ip = ? AND timestamp >= ?`
+    ).bind(clientIp, windowStart).all()
+
+    const requestCount = (results[0] as any)?.count || 0
+
+    if (requestCount >= 30) {
+      return c.json({ error: "Rate limit exceeded. Please try again later." }, 429)
     }
 
-    if ((path === "/healthz" || path === "/health") && request.method === "GET") {
-      const runtime = createEdgeRuntime(env);
-      return Response.json({
-        status: runtime.adapters.list().every((adapter) => adapter.state === "CONNECTED") ? "CONNECTED" : "DEGRADED",
-        substrate: "Portal-OS1 Edge Runtime",
-        identityAnchor: "bba28add4f99bd9aae158f173168145d",
-        adapters: runtime.adapters.list().map(({ kind, id, state, identityAnchor }) => ({ kind, id, state, identityAnchor })),
-        simulation: { id: "portal-edge-health", version: "1.0.0", stepMs: 1000, replay: runtime.simulation.verifyReplay() },
-      }, { headers });
+    await c.env.DB.prepare(
+      `INSERT INTO rate_limits (ip, timestamp) VALUES (?, ?)`
+    ).bind(clientIp, now).run()
+  } catch (err) {
+    console.error("Rate limiter warning:", err)
+  }
+
+  await next()
+}
+
+// ==========================================
+// 2. QAL AUTHENTICATION MIDDLEWARE (Private)
+// ==========================================
+const qalAuthMiddleware = async (c: any, next: any) => {
+  const authHeader = c.req.header('X-QAL-Signature') || c.req.header('Authorization')
+  const secret = c.env.QAL_SECRET
+
+  if (!authHeader || authHeader !== secret) {
+    return c.json({ error: "Unauthorized: Invalid or missing QAL credentials" }, 401)
+  }
+  await next()
+}
+
+// ==========================================
+// 3. PUBLIC CATALOG ENDPOINT (Sanitized & Rate-Limited)
+// ==========================================
+app.get('/api/catalog', publicRateLimiter, async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, title, category, creator, quantum_hash, created_at FROM planetary_assets ORDER BY created_at DESC`
+    ).all()
+
+    return c.json({
+      success: true,
+      assets: results
+    })
+  } catch (error) {
+    return c.json({ success: false, error: "Failed to fetch public catalog" }, 500)
+  }
+})
+
+// ==========================================
+// 4. PROTECTED NODE TELEMETRY ENDPOINT (QAL Required)
+// ==========================================
+app.get('/api/node/telemetry', qalAuthMiddleware, async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT node_id, region, dat_balance, status, last_heartbeat FROM node_telemetry`
+    ).all()
+
+    return c.json({
+      success: true,
+      restricted_telemetry: results
+    })
+  } catch (error) {
+    return c.json({ success: false, error: "Failed to fetch node telemetry" }, 500)
+  }
+})
+
+// ==========================================
+// 5. PROTECTED ASSET MINTING ENDPOINT (QAL Required)
+// ==========================================
+app.post('/api/catalog/mint', qalAuthMiddleware, async (c) => {
+  try {
+    const body = await c.req.json()
+    const { title, category, creator, quantum_hash } = body
+
+    if (!title || !category || !creator || !quantum_hash) {
+      return c.json({ success: false, error: "Missing required asset fields" }, 400)
     }
 
-    try {
-      const access = await protectPortal(request, env);
-      if (access instanceof Response) {
-        ctx.waitUntil(auditAccess(env, request, null, access.status));
-        headers.forEach((value, key) => access.headers.set(key, value));
-        return access;
-      }
+    await c.env.DB.prepare(
+      `INSERT INTO planetary_assets (title, category, creator, quantum_hash, created_at) VALUES (?, ?, ?, ?, datetime('now'))`
+    ).bind(title, category, creator, quantum_hash).run()
 
-      const sovereignRoute = path.startsWith("/api/manifold/") || path.startsWith("/api/storefront/");
-      if (sovereignRoute) {
-        const sovereignAccess = await verifySovereignAccess(request, env);
-        if (!sovereignAccess.authorized) {
-          const response = Response.json({
-            error: "Sovereign Access Denied",
-            reason: sovereignAccess.tier,
-            protocol: "BEEMAX-V1",
-          }, { status: 402, headers });
-          ctx.waitUntil(auditAccess(env, request, null, response.status));
-          return response;
-        }
-      }
+    return c.json({
+      success: true,
+      message: "Asset successfully minted to edge D1.",
+      asset: { title, category, creator, quantum_hash }
+    }, 201)
+  } catch (error) {
+    return c.json({ success: false, error: "Internal server error during asset minting" }, 500)
+  }
+})
 
-      const telemetry = await telemetryStatsApi(request, env);
-      if (telemetry) {
-        ctx.waitUntil(auditAccess(env, request, access, telemetry.status));
-        headers.forEach((value, key) => telemetry.headers.set(key, value));
-        return telemetry;
-      }
-
-      if (path === "/api/stream/token") {
-        if (request.method !== "GET") {
-          const response = Response.json({ error: "Method not allowed" }, { status: 405, headers });
-          ctx.waitUntil(auditAccess(env, request, access, response.status));
-          return response;
-        }
-        if (access.role === "Automation") {
-          const response = Response.json({ error: "Staff sign-in required" }, { status: 403, headers });
-          ctx.waitUntil(auditAccess(env, request, null, response.status));
-          return response;
-        }
-        const response = await streamTokenApi(env);
-        headers.forEach((value, key) => response.headers.set(key, value));
-        ctx.waitUntil(auditAccess(env, request, access, response.status));
-        return response;
-      }
-
-      if (path === "/sim/tick" && request.method === "POST") {
-        const declaredLength = Number(request.headers.get("Content-Length") ?? 0);
-        if (declaredLength > 65_536) return Response.json({ success: false, error: "Payload too large" }, { status: 413, headers });
-        const body: unknown = await request.json();
-        if (!body || typeof body !== "object" || Array.isArray(body))
-          return Response.json({ success: false, error: "Expected a JSON object state" }, { status: 400, headers });
-        const tick = createEdgeRuntime(env).simulation.executeTick(body as Record<string, unknown>);
-        ctx.waitUntil(auditAccess(env, request, access, 200));
-        return Response.json({ success: true, tick }, { headers });
-      }
-      if (path === "/sim/provenance" && request.method === "GET") {
-        return Response.json({ provenance: createEdgeRuntime(env).simulation.getReplayProvenance() }, { headers });
-      }
-
-      const compat = path.startsWith("/api/bemax") || path.startsWith("/api/providers") || path.startsWith("/api/governor") || path.startsWith("/api/uss")
-        ? await compatibilityApi(request, env) : null;
-      const maxSim = await maxSimApi(request, env);
-      const upstream = path === "/api/session" ? Response.json(access)
-        : compat ?? maxSim ?? (path.startsWith("/api/bemax")
-          ? (await bemaxApi(request, env)) ?? (await routeApi(request, env))
-          : !path.startsWith("/api/") || path.startsWith("/api/kernel/")
-            ? await kernel.fetch(request, env, ctx) : await routeApi(request, env));
-      if (request.method !== "GET") ctx.waitUntil(auditAccess(env, request, access, upstream.status));
-      const response = new Response(upstream.body, upstream);
-      response.headers.delete("Access-Control-Allow-Origin");
-      headers.forEach((value, key) => response.headers.set(key, value));
-      return response;
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      console.error("[portal-os1] worker request failure", {
-        method: request.method, url: request.url, bindingNames: Object.keys(env ?? {}),
-        message: err.message, stack: err.stack ?? "",
-        sql: typeof (error as any)?.cause === "object" && "sql" in ((error as any).cause ?? {}) ? String((error as any).cause.sql) : undefined,
-      });
-      return Response.json({ error: "Portal data is unavailable" }, { status: 500, headers });
-    }
-  },
-} satisfies ExportedHandler<Env>;
+export default app
