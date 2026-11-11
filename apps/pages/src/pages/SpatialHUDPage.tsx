@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+import { useGovernor } from "../layouts/GovernorLayout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_URL } from "../api/client";
 import { useGovernor } from "../layouts/GovernorLayout";
@@ -7,6 +9,13 @@ import type { SpatialCursor, SpatialFrame } from "../spatial/protocol";
 import { PortalVideoPanel } from "../stream/PortalVideoPanel";
 
 export const SpatialHUDPage: React.FC = () => {
+  const { token } = useGovernor();
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [activeMode, setActiveMode] = useState("PATH-B GRID // STABLE");
+  const [resonanceActive, setResonanceActive] = useState(true);
+  const [peerCursors, setPeerCursors] = useState<Array<{ id: string; x: number; y: number; mode: string }>>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const peerId = useRef(`hud-${Math.random().toString(36).slice(2, 10)}`);
   const { token: sessionToken } = useGovernor();
   const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fallbackCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -18,6 +27,7 @@ export const SpatialHUDPage: React.FC = () => {
   const [connection, setConnection] = useState<SpatialConnectionState>("connecting");
   const [rendererMode, setRendererMode] = useState<"webgl" | "2d">("2d");
   const modeRef = useRef(activeMode);
+  const connectedRef = useRef(false);
   modeRef.current = activeMode;
 
   const applyFrame = useCallback((frame: SpatialFrame) => {
@@ -31,6 +41,63 @@ export const SpatialHUDPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!token) {
+      connectedRef.current = false;
+      setIsConnected(false);
+      setPeerCursors([]);
+      return;
+    }
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${window.location.host}/api/space/ws`);
+    let authenticated = false;
+
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ type: "auth", token, peerId: peerId.current }));
+    };
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "ready") {
+          authenticated = true;
+          connectedRef.current = true;
+          setIsConnected(true);
+        } else if (data.type === "peer" && data.id && data.id !== peerId.current) {
+          setPeerCursors((previous) => {
+            const next = previous.filter((entry) => entry.id !== data.id);
+            next.push({ id: data.id, x: data.x, y: data.y, mode: data.mode ?? "STABLE" });
+            return next.slice(-12);
+          });
+        } else if (data.type === "leave" && data.id) {
+          setPeerCursors((previous) => previous.filter((entry) => entry.id !== data.id));
+        }
+      } catch {
+        console.error("Malformed instant space telemetry");
+      }
+    };
+    socket.onclose = () => {
+      authenticated = false;
+      connectedRef.current = false;
+      setIsConnected(false);
+      setPeerCursors([]);
+    };
+    socket.onerror = () => {
+      authenticated = false;
+      connectedRef.current = false;
+      setIsConnected(false);
+    };
+
+    const interval = window.setInterval(() => {
+      if (!authenticated || socket.readyState !== WebSocket.OPEN) return;
+      const x = 0.5 + Math.sin(Date.now() / 1500) * 0.3;
+      const y = 0.5 + Math.cos(Date.now() / 2100) * 0.25;
+      socket.send(JSON.stringify({
+        x: Math.min(1, Math.max(0, x)),
+        y: Math.min(1, Math.max(0, y)),
+        mode: modeRef.current,
+      }));
+    }, 500);
+
     const webglCanvas = webglCanvasRef.current;
     const fallbackCanvas = fallbackCanvasRef.current;
     if (!webglCanvas || !fallbackCanvas) return;
@@ -120,7 +187,12 @@ export const SpatialHUDPage: React.FC = () => {
       });
     }, 500);
     return () => {
+      authenticated = false;
+      connectedRef.current = false;
       window.clearInterval(interval);
+      socket.close();
+    };
+  }, [token]);
       manager.disconnect();
       managerRef.current = null;
     };
@@ -130,6 +202,14 @@ export const SpatialHUDPage: React.FC = () => {
   const statusLabel = connection === "connected" ? "ENTITY: ONLINE" : connection === "unauthorized" ? "ENTITY: AUTH REQUIRED" : connection === "disconnected" ? "ENTITY: OFFLINE" : "ENTITY: CONNECTING";
 
   return (
+    <div style={styles.container}>
+      <canvas ref={canvasRef} style={styles.canvas} aria-hidden="true" />
+      <div style={styles.uiLayer}>
+        <header style={styles.header}>
+          <h1 style={styles.headerTitle}>PORTAL-OS1 // CLOSEST ENTITY CORE</h1>
+          <div style={{ textAlign: "right" }}>
+            <div style={styles.statusBadge}>{isConnected ? "ENTITY: ONLINE [$0.00/MO]" : token ? "ENTITY: CONNECTING" : "ENTITY: SIGN IN REQUIRED"}</div>
+            <div style={styles.subText}>ANCHOR: bba28add4f99bd9aae158f173168145d</div>
     <main className="spatial-hud" aria-label="Portal spatial HUD">
       <canvas ref={webglCanvasRef} className={`spatial-hud__canvas spatial-hud__webgl ${rendererMode === "webgl" ? "is-visible" : ""}`} aria-hidden="true" />
       <canvas ref={fallbackCanvasRef} className={`spatial-hud__canvas spatial-hud__fallback ${rendererMode === "2d" ? "is-visible" : ""}`} aria-hidden="true" />

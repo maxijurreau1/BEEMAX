@@ -48,6 +48,93 @@ function AuthenticatedPortal() {
 }
 
 createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <GovernorLayout>
+      <BrowserRouter>
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
+        <Routes>
+          {/* Unconstrained Spatial HUD view, outside the application shell. */}
+          <Route path="/hud" element={<SpatialHUDPage />} />
+          <Route element={<MainLayout />}>
+            <Route index element={<RoleHome />} />
+            <Route path="portal/dashboard" element={<Dashboard />} />
+            <Route path="portal/bemax" element={<BemaxHome />} />
+            <Route path="portal/products" element={<Products />} />
+            <Route path="portal/products/:id" element={<ProductDetail />} />
+            <Route path="portal/pipeline" element={<Pipeline />} />
+            <Route path="portal/analytics" element={<Analytics />} />
+            <Route path="portal/revenue" element={<Revenue />} />
+            <Route
+              path="portal/recommendations"
+              element={<Recommendations />}
+            />
+            <Route path="portal" element={<Ecosystem />} />
+            <Route path="portal/ecosystem" element={<Ecosystem />} />
+            <Route
+              path="portal/governor"
+              element={
+                <GovernorOnly>
+                  <GovernorHome />
+                </GovernorOnly>
+              }
+            />
+            <Route path="portal/divisions/:id" element={<DivisionCentre />} />
+            <Route path="portal/institute" element={<Institute />} />
+            <Route path="portal/intelligence" element={<Intelligence />} />
+            <Route path="portal/products/:id/twin" element={<ProductTwin />} />
+            <Route path="portal/twin" element={<TwinGraph />} />
+            <Route path="portal/workers" element={<ExecutionWorkers />} />
+            <Route
+              path="portal/marketplace"
+              element={<MarketplaceOperations />}
+            />
+            <Route path="portal/factory" element={<Orchestration />} />
+            <Route path="portal/portfolio" element={<Portfolio />} />
+            <Route path="portal/publishing" element={<Publishing />} />
+            <Route path="portal/departments" element={<Departments />} />
+            <Route path="portal/approvals" element={<Approvals />} />
+            <Route path="portal/forecasting" element={<Forecasting />} />
+
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="bemax" element={<BemaxHome />} />
+            <Route path="portfolio" element={<Portfolio />} />
+            <Route path="pipeline" element={<Pipeline />} />
+            <Route path="products" element={<Products />} />
+            <Route path="products/:id" element={<ProductDetail />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="runtime" element={<Runtime />} />
+            <Route path="orchestration" element={<Orchestration />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="departments" element={<Departments />} />
+            <Route path="forecasting" element={<Forecasting />} />
+            <Route
+              path="governance"
+              element={
+                <GovernorOnly>
+                  <Governance />
+                </GovernorOnly>
+              }
+            />
+            <Route path="publishing" element={<Publishing />} />
+            <Route path="revenue" element={<Revenue />} />
+            <Route path="recommendations" element={<Recommendations />} />
+            <Route path="settings" element={<Settings />} />
+            <Route
+              path="*"
+              element={
+                <>
+                  <h1>Page not found</h1>
+                  <Link to="/">Return to dashboard</Link>
+                </>
+              }
+            />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </GovernorLayout>
+  </StrictMode>,
   <StrictMode><BrowserRouter><Routes>
     <Route element={<AuthenticatedPortal />}>
       <Route path="hud" element={<AuthenticatedHUD />} />

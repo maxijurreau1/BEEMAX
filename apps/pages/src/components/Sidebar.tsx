@@ -10,6 +10,8 @@ const links = [
   ["/portal/twin", "portfolio", "Digital twin"],
   ["/portal/marketplace", "products", "Marketplace"],
   ["/portal/dashboard", "dashboard", "Dashboard"],
+  ["/hud", "health", "Spatial HUD"],
+  ["/gallery", "products", "Art Gallery"],
   ["/portfolio", "portfolio", "Portfolio"],
   ["/products", "products", "Products"],
   ["/pipeline", "pipeline", "Pipeline"],
