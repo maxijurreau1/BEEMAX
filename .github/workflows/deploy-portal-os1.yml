@@ -1,13 +1,7 @@
-name: Deploy Portal-OS1
+name: Deploy Portal-OS1 and Marketplace
 
 on:
   workflow_dispatch:
-    inputs:
-      deploy_marketplace:
-        description: Deploy the public marketplace worker/pages as part of this run
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -66,16 +60,14 @@ jobs:
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply DB --remote --config wrangler.toml
 
-      - name: Deploy private Worker
+      - name: Deploy Portal-OS1 Worker
         run: npx wrangler deploy --config wrangler.toml
 
-      - name: Deploy private Pages app
+      - name: Deploy Portal-OS1 Pages app
         run: npm run deploy:pages
 
-      - name: Deploy marketplace Worker
-        if: ${{ inputs.deploy_marketplace == true }}
+      - name: Deploy Marketplace Worker
         run: npx wrangler deploy --config wrangler.marketplace.toml
 
-      - name: Deploy marketplace Pages app
-        if: ${{ inputs.deploy_marketplace == true }}
+      - name: Deploy Marketplace Pages app
         run: npm run deploy:marketplace:pages
