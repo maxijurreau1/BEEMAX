@@ -1,8 +1,8 @@
 import type { Env } from "./types";
 import { marketplaceApi, reconcilePayments } from "./marketplace";
 import { handleWardrobeCheckout } from "./wardrobe-checkout";
-import { verifySovereignRequest } from "./auth-middleware";
 import {
+  createMarketplaceDownloadGrant,
   grantFromRequest,
   resolveMarketplaceDownloadGrant,
 } from "./marketplace-downloads";
@@ -40,10 +40,7 @@ export default {
       headers.set("Access-Control-Allow-Origin", origin);
       headers.set("Access-Control-Allow-Credentials", "true");
       headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      headers.set(
-        "Access-Control-Allow-Headers",
-        "Content-Type, X-QAL-Identity, X-QAL-Timestamp, X-QAL-Request-Id, X-QAL-Signature",
-      );
+      headers.set("Access-Control-Allow-Headers", "Content-Type");
     }
     if (
       (origin && !allowed.has(origin)) ||
@@ -57,46 +54,12 @@ export default {
       return new Response(null, { status: 204, headers });
     if (!url.pathname.startsWith("/api/"))
       return Response.json({ error: "Not found" }, { status: 404, headers });
-
     try {
-      if (url.pathname === "/api/health" && request.method === "GET") {
-        return Response.json({ status: "ONLINE", node: "JFK-EDGE" }, { headers });
-      }
-
-      if (url.pathname === "/api/marketplace/items" && request.method === "GET") {
-        const { results } = await env.DB.prepare(
-          "SELECT * FROM marketplace_items",
-        ).all();
-        return Response.json(results, { headers });
-      }
-
-      const protectedRoute =
-        url.pathname.startsWith("/api/storefront/") ||
-        url.pathname.startsWith("/api/manifold/");
-      if (protectedRoute) {
-        const authError = await verifySovereignRequest(request, env);
-        if (authError) {
-          headers.forEach((value, key) => authError.headers.set(key, value));
-          return authError;
-        }
-      }
-
       let response: Response;
-      if (url.pathname === "/api/wardrobe/checkout") {
+      if (url.pathname === "/api/marketplace/items" && request.method === "GET") {
+        response = Response.json({ items: [] }, { headers });
+      } else if (url.pathname === "/api/wardrobe/checkout") {
         response = await handleWardrobeCheckout(request, env);
-      } else if (url.pathname === "/api/manifold/hud" && request.method === "GET") {
-        response = Response.json({
-          status: "SECURE",
-          telemetry: "Marketplace edge request authenticated.",
-        });
-      } else if (
-        url.pathname === "/api/storefront/acquire" &&
-        request.method === "POST"
-      ) {
-        // Forward acquisition to the existing order flow, which still requires
-        // the customer session and performs payment/order checks server-side.
-        const orderUrl = new URL("/api/orders", url);
-        response = await marketplaceApi(new Request(orderUrl, request), env);
       } else if (url.pathname === "/api/downloads/resolve") {
         response = await resolveMarketplaceDownloadGrant(request, env);
       } else if (
@@ -119,7 +82,7 @@ export default {
       const malformed =
         error instanceof SyntaxError ||
         (error instanceof Error &&
-          ["Expected a JSON object", "Request is too large", "Signed request body is too large"].includes(
+          ["Expected a JSON object", "Request is too large"].includes(
             error.message,
           ));
       return Response.json(
