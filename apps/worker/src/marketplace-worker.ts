@@ -63,6 +63,13 @@ export default {
         return Response.json({ status: "ONLINE", node: "JFK-EDGE" }, { headers });
       }
 
+      if (url.pathname === "/api/marketplace/items" && request.method === "GET") {
+        const { results } = await env.DB.prepare(
+          "SELECT * FROM marketplace_items",
+        ).all();
+        return Response.json(results, { headers });
+      }
+
       const protectedRoute =
         url.pathname.startsWith("/api/storefront/") ||
         url.pathname.startsWith("/api/manifold/");
