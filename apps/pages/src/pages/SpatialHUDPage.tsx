@@ -34,14 +34,17 @@ export const SpatialHUDPage: React.FC = () => {
     const webglCanvas = webglCanvasRef.current;
     const fallbackCanvas = fallbackCanvasRef.current;
     if (!webglCanvas || !fallbackCanvas) return;
+
     let disposed = false;
     let active: HUDRenderer | null = null;
     let fallback: Canvas2DHUDRenderer | null = null;
+
     const size = () => {
       const ratio = window.devicePixelRatio || 1;
       active?.resize(window.innerWidth, window.innerHeight, ratio);
       fallback?.resize(window.innerWidth, window.innerHeight, ratio);
     };
+
     const activateFallback = () => {
       if (disposed || active instanceof Canvas2DHUDRenderer) return;
       active?.dispose();
@@ -57,6 +60,7 @@ export const SpatialHUDPage: React.FC = () => {
         console.error("HUD 2D fallback unavailable", error);
       }
     };
+
     const activateWebGL = () => {
       if (disposed) return;
       const renderer = new WebGLHUDRenderer(webglCanvas);
@@ -76,16 +80,20 @@ export const SpatialHUDPage: React.FC = () => {
         activateFallback();
       }
     };
+
     const onContextLost = (event: Event) => {
       event.preventDefault();
       activateFallback();
     };
+
     const onContextRestored = () => activateWebGL();
+
     webglCanvas.addEventListener("webglcontextlost", onContextLost);
     webglCanvas.addEventListener("webglcontextrestored", onContextRestored);
     window.addEventListener("resize", size);
     activateWebGL();
     if (!active) activateFallback();
+
     return () => {
       disposed = true;
       window.removeEventListener("resize", size);
@@ -102,6 +110,7 @@ export const SpatialHUDPage: React.FC = () => {
       setConnection("unauthorized");
       return;
     }
+
     const manager = new SpatialWSManager({
       url: API_URL,
       pageUrl: window.location.href,
@@ -110,8 +119,10 @@ export const SpatialHUDPage: React.FC = () => {
       onMessage: applyFrame,
       onStatus: setConnection,
     });
+
     managerRef.current = manager;
     manager.connect();
+
     const interval = window.setInterval(() => {
       manager.sendPosition({
         x: Math.min(1, Math.max(0, 0.5 + Math.sin(Date.now() / 1500) * 0.3)),
@@ -119,6 +130,7 @@ export const SpatialHUDPage: React.FC = () => {
         mode: modeRef.current,
       });
     }, 500);
+
     return () => {
       window.clearInterval(interval);
       manager.disconnect();
@@ -127,30 +139,49 @@ export const SpatialHUDPage: React.FC = () => {
   }, [sessionToken, applyFrame]);
 
   const selectMode = (mode: string) => () => setActiveMode(mode);
-  const statusLabel = connection === "connected" ? "ENTITY: ONLINE" : connection === "unauthorized" ? "ENTITY: AUTH REQUIRED" : connection === "disconnected" ? "ENTITY: OFFLINE" : "ENTITY: CONNECTING";
+  const statusLabel =
+    connection === "connected"
+      ? "ENTITY: ONLINE"
+      : connection === "unauthorized"
+        ? "ENTITY: AUTH REQUIRED"
+        : connection === "disconnected"
+          ? "ENTITY: OFFLINE"
+          : "ENTITY: CONNECTING";
 
   return (
     <main className="spatial-hud" aria-label="Portal spatial HUD">
-      <canvas ref={webglCanvasRef} className={`spatial-hud__canvas spatial-hud__webgl ${rendererMode === "webgl" ? "is-visible" : ""}`} aria-hidden="true" />
-      <canvas ref={fallbackCanvasRef} className={`spatial-hud__canvas spatial-hud__fallback ${rendererMode === "2d" ? "is-visible" : ""}`} aria-hidden="true" />
+      <canvas
+        ref={webglCanvasRef}
+        className={`spatial-hud__canvas spatial-hud__webgl ${rendererMode === "webgl" ? "is-visible" : ""}`}
+        aria-hidden="true"
+      />
+      <canvas
+        ref={fallbackCanvasRef}
+        className={`spatial-hud__canvas spatial-hud__fallback ${rendererMode === "2d" ? "is-visible" : ""}`}
+        aria-hidden="true"
+      />
       <div className="spatial-hud__overlay">
         <header className="spatial-hud__header">
           <h1>PORTAL-OS1 // SPATIAL HUD</h1>
           <div className="spatial-hud__status" aria-live="polite">
-            <span>{statusLabel}</span><small>RENDERER: {rendererMode === "webgl" ? "WEBGL" : "2D FALLBACK"}</small>
+            <span>{statusLabel}</span>
+            <small>RENDERER: {rendererMode === "webgl" ? "WEBGL" : "2D FALLBACK"}</small>
           </div>
         </header>
+
         <aside className="spatial-hud__panel" aria-label="Simulation nodes">
           <h2>SIMULATION // NODES</h2>
           <button onClick={selectMode("PATH-B Sector 01 Active")}>PATH-B Sector 01 <small>1Hz deterministic simulation</small></button>
           <button onClick={selectMode("MAX Chess Platform Active")}>MAX Chess Platform <small>Chess engine</small></button>
           <button onClick={selectMode("Quantum Sports Grid Active")}>Quantum Sports Grid <small>Telemetry integration pending</small></button>
         </aside>
+
         <section className="spatial-hud__center">
           <p>CORE MODE: <strong>{activeMode}</strong></p>
           <button aria-pressed={resonanceActive} onClick={() => setResonanceActive((value) => !value)}>Toggle Entity Pulse</button>
           <small>{peersRef.current.size} connected peer(s)</small>
         </section>
+
         <aside className="spatial-hud__panel spatial-hud__media" aria-label="Media archive">
           <h2>MEDIA // ARCHIVES</h2>
           <PortalVideoPanel />
