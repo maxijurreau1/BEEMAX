@@ -20,11 +20,7 @@ export function GovernorLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (disablePortalLogin) {
-      setSession({
-        token: "dev-bypass",
-        id: "dev-bypass",
-        role: "Governor",
-      });
+      setSession({ token: "dev-bypass", id: "dev-bypass", role: "Governor" });
       setStaffToken("dev-bypass");
     }
   }, [disablePortalLogin]);
@@ -54,60 +50,26 @@ export function GovernorLayout({ children }: { children: React.ReactNode }) {
       setBusy(false);
     }
   }
-  if (disablePortalLogin && !session) {
-    return <>{children}</>;
-  }
+  if (disablePortalLogin && !session) return <>{children}</>;
   if (!session)
     return (
       <main className="portal-login">
         <section className="panel">
           <div className="eyebrow">MAX ECOSYSTEM · PRIVATE WORKSPACE</div>
           <h1>Portal-OS1</h1>
-          <p>
-            Sign in with your staff access credential to open the command
-            centre.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void signIn(draft.trim());
-            }}
-          >
+          <p>Sign in with your staff access credential to open the command centre.</p>
+          <form onSubmit={(e) => { e.preventDefault(); void signIn(draft.trim()); }}>
             <label htmlFor="staff-credential">Access credential</label>
-            <input
-              id="staff-credential"
-              type="password"
-              autoComplete="off"
-              required
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-            <button className="primary" disabled={busy}>
-              {busy ? "Signing in…" : "Sign in"}
-            </button>
+            <input id="staff-credential" type="password" autoComplete="off" required value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <button className="primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
           </form>
-          {error && (
-            <p className="notice error" role="alert">
-              {error}
-            </p>
-          )}
-          <p className="muted">
-            Authorised staff only. Access expires when this tab is reloaded.
-          </p>
+          {error && <p className="notice error" role="alert">{error}</p>}
+          <p className="muted">Authorised staff only. Access expires when this tab is reloaded.</p>
         </section>
       </main>
     );
   return (
-    <GovernorContext.Provider
-      value={{
-        token: session.role === "Governor" ? session.token : "",
-        role: session.role,
-        setToken: (token) => {
-          if (token) void signIn(token);
-          else signOut();
-        },
-      }}
-    >
+    <GovernorContext.Provider value={{ token: session.token, role: session.role, setToken: (token) => { if (token) void signIn(token); else signOut(); } }}>
       {children}
     </GovernorContext.Provider>
   );

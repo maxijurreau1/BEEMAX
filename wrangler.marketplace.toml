@@ -1,14 +1,21 @@
 name = "market-place"
 main = "apps/worker/src/marketplace-worker.ts"
 compatibility_date = "2026-04-01"
+account_id = "0b81b8c4e766ceb27fc7ed55c06d857e"
+# No custom-domain route is configured: the API is served on workers.dev and
+# the Pages build calls it via VITE_API_BASE.
+
 [vars]
-MARKETPLACE_ORIGIN = "https://max.games"
+MARKETPLACE_ORIGIN = "https://max-games.pages.dev"
+
 [[d1_databases]]
 binding = "DB"
-database_name = "portal-os1-production1-db"
-database_id = "73b4f0ee-5eb1-4ccd-9b50-1ec9ab39532b"
+database_name = "planetary-max-db"
+database_id = "42213e2a-9607-4b46-9744-07d1420e0a60"
 migrations_dir = "apps/worker/d1/migrations"
-# Add CUSTOMER_IDENTITY, PAYMENTS and DOWNLOADS service bindings for trusted adapters.
+# Provision DOWNLOADS_SECRET as a Wrangler secret (minimum 32 random bytes),
+# not as a plaintext [vars] entry. The audited HMAC route is enabled when set.
+# Keep DOWNLOADS as a trusted service binding that issues provider-native URLs.
 # No public endpoint accepts payment or execution success from a browser.
 
 [triggers]

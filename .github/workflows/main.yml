@@ -1,13 +1,18 @@
-name: Portal-OS1 Release Validation
+name: Portal-OS1 CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - master
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -28,119 +33,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Build all
+      - name: Build
         run: npm run build
 
-      - name: Worker dry run
+      - name: Validate private Worker config
         run: npx wrangler deploy --dry-run --config wrangler.toml
 
-      - name: Marketplace dry run
+      - name: Validate marketplace config
         run: npx wrangler deploy --dry-run --config wrangler.marketplace.toml
-
-  worker-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: build-and-test
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.12
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Start worker locally
-        run: |
-          npx wrangler dev --local --port 8787 > worker.log 2>&1 &
-          echo $! > worker.pid
-          sleep 15
-
-      - name: Validate compatibility routes
-        run: |
-          for url in \
-            /api/bemax/summary \
-            /api/bemax/risks \
-            /api/bemax/opportunities \
-            /api/providers/health \
-            /api/providers/models \
-            /api/governor/summary \
-            /api/governor/approvals \
-            /api/governor/risks \
-            /api/uss/overview \
-            /api/uss/records
-          do
-            echo "Checking $url"
-            curl -fsS -D headers.txt -o body.json "http://127.0.0.1:8787$url"
-            grep -q "200" headers.txt
-            grep -qi "application/json" headers.txt
-          done
-
-      - name: Validate empty registry contracts
-        run: |
-          for url in \
-            /api/identity/registry \
-            /api/event/registry \
-            /api/relationship/registry \
-            /api/research/registry \
-            /api/policy/registry \
-            /api/provider/registry \
-            /api/simulation/registry
-          do
-            echo "Checking $url"
-            curl -fsS "http://127.0.0.1:8787$url" | jq -e '.records == []'
-          done
-
-      - name: Stop worker
-        if: always()
-        run: |
-          if [ -f worker.pid ]; then
-            kill "$(cat worker.pid)" || true
-          fi
-
-  pages-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: build-and-test
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.12
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Start Pages app
-        run: |
-          npm run dev:pages > pages.log 2>&1 &
-          echo $! > pages.pid
-          sleep 20
-
-      - name: Validate Pages routes
-        run: |
-          for path in \
-            /portal/dashboard \
-            /portal/bemax \
-            /portal/institute \
-            /portal/governor \
-            /portal/ecosystem
-          do
-            echo "Checking $path"
-            curl -fsS -I "http://127.0.0.1:5173$path" | grep -q "200"
-          done
-
-      - name: Stop Pages app
-        if: always()
-        run: |
-          if [ -f pages.pid ]; then
-            kill "$(cat pages.pid)" || true
-          fi

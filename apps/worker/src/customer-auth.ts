@@ -19,7 +19,9 @@ export function sessionCookie(
   value: string,
   seconds: number,
 ) {
-  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
+  // The pages.dev storefront and workers.dev API are cross-site. None; Secure
+  // is required for the browser to send these cookies on credentialed API calls.
+  return `${name}=${value}; Path=/; HttpOnly; SameSite=None; Max-Age=${seconds}; Secure`;
 }
 export async function customer(
   request: Request,

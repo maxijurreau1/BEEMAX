@@ -54,17 +54,130 @@ export default {
       const objectId = env.INSTANT_SPACE.idFromName("portal-os1-spatial-space");
       return env.INSTANT_SPACE.get(objectId).fetch(request);
     }
+import { Hono, type MiddlewareHandler } from 'hono'
 
-    // Health is deliberately read-only and discloses binding status, not credentials or user data.
-    if ((path === "/healthz" || path === "/health") && request.method === "GET") {
-      const runtime = createEdgeRuntime(env);
-      return Response.json({
-        status: runtime.adapters.list().every((adapter) => adapter.state === "CONNECTED") ? "CONNECTED" : "DEGRADED",
-        substrate: "Portal-OS1 Edge Runtime",
-        identityAnchor: "bba28add4f99bd9aae158f173168145d",
-        adapters: runtime.adapters.list().map(({ kind, id, state, identityAnchor }) => ({ kind, id, state, identityAnchor })),
-        simulation: { id: "portal-edge-health", version: "1.0.0", stepMs: 1000, replay: runtime.simulation.verifyReplay() },
-      }, { headers });
+type Bindings = {
+  DB: D1Database;
+  ASSETS: Fetcher;
+  GOVERNOR_API_TOKEN?: string;
+  QAL_SECRET?: string;
+  CF_CONNECTING_IP?: string;
+}
+
+type AppEnv = { Bindings: Bindings }
+
+const app = new Hono<AppEnv>()
+
+// Keep a small per-isolate sliding window without depending on an unmigrated D1 table.
+const rateLimitRequests = new Map<string, number[]>()
+const publicRateLimiter: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const clientIp = c.req.header('CF-Connecting-IP') || 'unknown'
+  const now = Date.now()
+  const windowStart = now - 60_000
+  const recentRequests = (rateLimitRequests.get(clientIp) ?? []).filter(
+    (timestamp) => timestamp >= windowStart,
+  )
+
+  if (recentRequests.length >= 30) {
+    rateLimitRequests.set(clientIp, recentRequests)
+    return c.json({ error: 'Rate limit exceeded. Please try again later.' }, 429)
+  }
+
+  recentRequests.push(now)
+  rateLimitRequests.set(clientIp, recentRequests)
+  await next()
+}
+
+function equalSecret(candidate: string, secret: string): boolean {
+  const encoder = new TextEncoder()
+  const candidateBytes = encoder.encode(candidate)
+  const secretBytes = encoder.encode(secret)
+  let difference = candidateBytes.length ^ secretBytes.length
+  const length = Math.max(candidateBytes.length, secretBytes.length)
+
+  for (let index = 0; index < length; index += 1) {
+    difference |=
+      (candidateBytes[index] ?? 0) ^ (secretBytes[index] ?? 0)
+  }
+  return difference === 0
+}
+
+// ==========================================
+// QAL AUTHENTICATION MIDDLEWARE (Private)
+// ==========================================
+const qalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const secret = c.env.QAL_SECRET
+  const authorization = c.req.header('Authorization')
+  const match = authorization?.match(/^Bearer\s+([^\s]+)$/i)
+
+  // Fail closed when the secret is not configured or the bearer token is invalid.
+  if (!secret || !match || !equalSecret(match[1], secret)) {
+    return c.json({ error: 'Unauthorized: Invalid or missing QAL credentials' }, 401)
+  }
+  await next()
+}
+
+// ==========================================
+// PUBLIC CATALOG ENDPOINT (Sanitized & Rate-Limited)
+// ==========================================
+app.get('/api/catalog', publicRateLimiter, async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, title, category, price_minor, vector_metadata, created_at
+       FROM catalog_items ORDER BY created_at DESC`,
+    ).all()
+
+    return c.json({ success: true, assets: results })
+  } catch {
+    return c.json({ success: false, error: 'Failed to fetch public catalog' }, 500)
+  }
+})
+
+app.get('/api/marketplace/items', publicRateLimiter, async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM marketplace_items').all()
+    return c.json(results)
+  } catch {
+    return c.json({ error: 'Failed to fetch marketplace items' }, 500)
+  }
+})
+
+// ==========================================
+// PROTECTED NODE TELEMETRY ENDPOINT (QAL Required)
+// ==========================================
+app.get('/api/node/telemetry', qalAuthMiddleware, async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT user_id, vector_type, composite_score, metadata, created_at
+       FROM subconscious_telemetry_log ORDER BY created_at DESC`,
+    ).all()
+
+    return c.json({ success: true, restricted_telemetry: results })
+  } catch {
+    return c.json({ success: false, error: 'Failed to fetch node telemetry' }, 500)
+  }
+})
+
+// ==========================================
+// PROTECTED ASSET MINTING ENDPOINT (QAL Required)
+// ==========================================
+app.post('/api/catalog/mint', qalAuthMiddleware, async (c) => {
+  try {
+    const body = await c.req.json<{
+      title?: unknown;
+      category?: unknown;
+      price_minor?: unknown;
+      vector_metadata?: unknown;
+    }>()
+
+    if (
+      typeof body.title !== 'string' || !body.title.trim() ||
+      typeof body.category !== 'string' || !body.category.trim() ||
+      !Number.isSafeInteger(body.price_minor) ||
+      (body.price_minor as number) < 0 ||
+      (body.vector_metadata !== undefined && typeof body.vector_metadata !== 'string')
+    ) {
+      return c.json({ success: false, error: 'Invalid catalog item fields' }, 400)
     }
 
     // The Worker hosts the built Pages app and leaves existing API and simulation routes intact.
@@ -116,6 +229,41 @@ export default {
         sql: typeof (error as any)?.cause === "object" && "sql" in ((error as any).cause ?? {}) ? String((error as any).cause.sql) : undefined,
       });
       return Response.json({ error: "Portal data is unavailable" }, { status: 500, headers });
+    const item = {
+      id: crypto.randomUUID(),
+      title: body.title.trim(),
+      category: body.category.trim(),
+      price_minor: body.price_minor as number,
+      vector_metadata: body.vector_metadata ?? null,
+      created_at: Math.floor(Date.now() / 1000),
     }
-  },
-} satisfies ExportedHandler<Env>;
+
+    await c.env.DB.prepare(
+      `INSERT INTO catalog_items (id, title, category, price_minor, vector_metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      item.id,
+      item.title,
+      item.category,
+      item.price_minor,
+      item.vector_metadata,
+      item.created_at,
+    ).run()
+
+    return c.json({ success: true, message: 'Catalog item created.', item }, 201)
+  } catch {
+    return c.json({ success: false, error: 'Internal server error during catalog item creation' }, 500)
+  }
+})
+
+// Catch unmatched API requests before the asset fallback.
+app.all('/api', (c) => c.json({ error: 'API route not found' }, 404))
+app.all('/api/*', (c) => c.json({ error: 'API route not found' }, 404))
+
+// Serve the built frontend for page routes and static assets.
+app.all('*', async (c) => c.env.ASSETS.fetch(c.req.raw))
+
+export { MicrokernelProcessActor } from './kernel'
+export { ProductFactoryActor } from './factory'
+export { InstantSpaceDurableObject } from './InstantSpaceDurableObject'
+export default app

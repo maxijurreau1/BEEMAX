@@ -1,18 +1,19 @@
-name = "portal-os1"
+name = "beemax"
 main = "apps/worker/src/index.ts"
-compatibility_date = "2026-10-30"
+compatibility_date = "2026-10-26"
+account_id = "0b81b8c4e766ceb27fc7ed55c06d857e"
 
 [vars]
 ENV = "production"
 ENVIRONMENT = "production"
-ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://portal-os1.pages.dev,https://portal-os1-969.pages.dev"
+ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://portal-os1.pages.dev,https://portal-os1-969.pages.dev,https://max-games.pages.dev"
 ICVS_ENABLED = "true"
 MAX_PROCESS_HEAP_BYTES = 2097152 # 2MB Hard Cap
 
 [[d1_databases]]
 binding = "DB"
-database_name = "portal-os1-production1-db"
-database_id = "73b4f0ee-5eb1-4ccd-9b50-1ec9ab39532b"
+database_name = "planetary-max-db"
+database_id = "42213e2a-9607-4b46-9744-07d1420e0a60"
 migrations_dir = "apps/worker/d1/migrations"
 
 [durable_objects]
@@ -22,17 +23,23 @@ bindings = [
   { name = "INSTANT_SPACE", class_name = "InstantSpaceDurableObject" }
 ]
 
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["MicrokernelProcessActor"]
+[exports.MicrokernelProcessActor]
+type = "durable-object"
+storage = "sqlite"
 
-[[migrations]]
-tag = "v2"
-new_sqlite_classes = ["ProductFactoryActor"]
+[exports.ProductFactoryActor]
+type = "durable-object"
+storage = "sqlite"
 
-[[migrations]]
-tag = "v3"
-new_sqlite_classes = ["InstantSpaceDurableObject"]
+[exports.InstantSpaceDurableObject]
+type = "durable-object"
+storage = "sqlite"
+
+[assets]
+directory = "./apps/pages/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
 
 [assets]
 directory = "./apps/pages/dist"

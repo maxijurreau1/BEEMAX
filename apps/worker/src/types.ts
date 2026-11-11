@@ -8,6 +8,7 @@ export interface Env {
   PAYMENTS?: Fetcher;
   DOWNLOADS?: Fetcher;
   ASSETS?: Fetcher;
+  DOWNLOADS_SECRET?: string;
   MARKETPLACE_ORIGIN?: string;
   STAFF_CREDENTIALS?: string;
   AUTOMATION_CREDENTIALS?: string;
@@ -16,9 +17,15 @@ export interface Env {
   FACTORY_ACTOR?: DurableObjectNamespace;
   INSTANT_SPACE?: DurableObjectNamespace;
   DB: D1Database;
+  SOVEREIGN_LEDGER?: D1Database;
+  SOVEREIGN_PUBLIC_KEY?: string;
   MICROKERNEL_ACTOR?: DurableObjectNamespace;
   ALLOWED_ORIGINS?: string;
   GOVERNOR_API_TOKEN?: string;
+  CF_STREAM_ACCOUNT_ID?: string;
+  CF_STREAM_VIDEO_UID?: string;
+  CF_STREAM_CUSTOMER_CODE?: string;
+  CF_STREAM_API_TOKEN?: string;
   ENV?: string;
   ENVIRONMENT?: string;
   DISABLE_PORTAL_LOGIN?: string;

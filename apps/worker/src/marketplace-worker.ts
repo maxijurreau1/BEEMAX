@@ -1,5 +1,24 @@
 import type { Env } from "./types";
 import { marketplaceApi, reconcilePayments } from "./marketplace";
+import { handleWardrobeCheckout } from "./wardrobe-checkout";
+import {
+  createMarketplaceDownloadGrant,
+  grantFromRequest,
+  resolveMarketplaceDownloadGrant,
+} from "./marketplace-downloads";
+export { InstantSpaceDurableObject } from "./InstantSpaceDurableObject";
+export { MicrokernelProcessActor } from "./kernel";
+export { ProductFactoryActor } from "./factory";
+
+function allowedOrigins(env: Env) {
+  return new Set(
+    (env.MARKETPLACE_ORIGIN ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  );
+}
+
 export default {
   async scheduled(
     _event: ScheduledController,
@@ -11,24 +30,24 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
-    const expected = env.MARKETPLACE_ORIGIN;
+    const allowed = allowedOrigins(env);
     const headers = new Headers({
       "Cache-Control": "no-store",
       Vary: "Origin",
       "X-Content-Type-Options": "nosniff",
     });
-    if (origin && origin === expected) {
+    if (origin && allowed.has(origin)) {
       headers.set("Access-Control-Allow-Origin", origin);
       headers.set("Access-Control-Allow-Credentials", "true");
       headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       headers.set("Access-Control-Allow-Headers", "Content-Type");
     }
     if (
-      (origin && origin !== expected) ||
-      (request.method === "POST" && origin !== expected)
+      (origin && !allowed.has(origin)) ||
+      (request.method === "POST" && (!origin || !allowed.has(origin)))
     )
       return Response.json(
-        { error: "Origin not allowed" },
+        { error: "Origin not allowed. Add this exact Pages origin to MARKETPLACE_ORIGIN." },
         { status: 403, headers },
       );
     if (request.method === "OPTIONS")
@@ -36,7 +55,27 @@ export default {
     if (!url.pathname.startsWith("/api/"))
       return Response.json({ error: "Not found" }, { status: 404, headers });
     try {
-      const response = await marketplaceApi(request, env);
+      let response: Response;
+      if (url.pathname === "/api/marketplace/items" && request.method === "GET") {
+        response = Response.json({ items: [] }, { headers });
+      } else if (url.pathname === "/api/wardrobe/checkout") {
+        response = await handleWardrobeCheckout(request, env);
+      } else if (url.pathname === "/api/downloads/resolve") {
+        response = await resolveMarketplaceDownloadGrant(request, env);
+      } else if (
+        url.pathname === "/api/downloads" &&
+        request.method === "POST" &&
+        env.DOWNLOADS_SECRET
+      ) {
+        response = await grantFromRequest(request, env);
+      } else if (
+        url.pathname === "/api/downloads/grant" &&
+        request.method === "POST"
+      ) {
+        response = await grantFromRequest(request, env);
+      } else {
+        response = await marketplaceApi(request, env);
+      }
       headers.forEach((value, key) => response.headers.set(key, value));
       return response;
     } catch (error) {

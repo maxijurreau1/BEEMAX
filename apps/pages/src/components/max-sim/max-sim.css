@@ -1,0 +1,30 @@
+ .max-sim-search { margin-bottom: 20px; }
+.max-sim-search form { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.max-sim-search label { display: grid; gap: 7px; color: #6f819d; font-size: 12px; }
+.max-sim-search input { min-width: min(360px, 70vw); border: 1px solid #dce3f0; border-radius: 5px; padding: 11px 12px; }
+.max-sim-run-meta { display: flex; gap: 10px 20px; flex-wrap: wrap; margin: 20px 0; color: #73829a; font-size: 11px; }
+.max-sim-run-meta span { overflow-wrap: anywhere; }
+.max-sim-panel { margin-top: 20px; }
+.max-sim-panel__header { display: flex; justify-content: space-between; align-items: start; gap: 16px; border-bottom: 1px solid #edf0f5; padding-bottom: 16px; }
+.max-sim-panel__header h2 { font-size: 17px; }
+.max-sim-badge { border: 1px solid #cfe7dc; background: #eefaf5; color: #287759; border-radius: 4px; padding: 6px 9px; font-size: 9px; letter-spacing: .08em; white-space: nowrap; }
+.max-sim-tree { list-style: none; margin: 18px 0 0; padding: 0 0 0 18px; border-left: 1px solid #dbe5f0; }
+.max-sim-tree > .max-sim-tree__item { margin: 0; }
+.max-sim-tree__item { padding: 0 0 0 16px; margin: 14px 0; }
+.max-sim-node { border: 1px solid #dce3ec; border-radius: 8px; padding: 16px; background: #fff; }
+.max-sim-node--favorable { border-color: #9edbd0; background: #f2fbf9; }
+.max-sim-node--critical_risk { border-color: #efb3bf; background: #fff7f8; }
+.max-sim-node__heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.max-sim-node__condition { display: flex; align-items: start; gap: 8px; min-width: 0; }
+.max-sim-node__condition strong { color: #344253; font-size: 13px; overflow-wrap: anywhere; }
+.max-sim-node__toggle { min-width: 28px; padding: 2px 6px; border-color: #ccd8e5; color: #426d85; }
+.max-sim-node__probability { flex: 0 0 auto; color: #74839a; font-size: 10px; }
+.max-sim-node__probability strong { color: #187b82; font-size: 12px; }
+.max-sim-node__metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid #e8edf2; }
+.max-sim-node__metrics > div { min-width: 0; }
+.max-sim-node__metrics dt { color: #8794a5; font-size: 10px; }
+.max-sim-node__metrics dd { margin: 4px 0 0; color: #526074; font-size: 11px; overflow-wrap: anywhere; }
+.max-sim-node__metrics dd.is-positive { color: #287759; font-weight: 700; }
+.max-sim-node__metrics dd.is-negative { color: #b13d51; font-weight: 700; }
+.max-sim-disclaimer { margin: 18px 0 0; padding-top: 12px; border-top: 1px solid #edf0f5; color: #8794a5; font-size: 10px; }
+@media (max-width: 700px) { .max-sim-node__heading { flex-direction: column; } .max-sim-node__metrics { grid-template-columns: 1fr; gap: 8px; } .max-sim-tree { padding-left: 10px; } .max-sim-tree__item { padding-left: 9px; } }

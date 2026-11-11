@@ -1,0 +1,24 @@
+/* Full-viewport, authenticated HUD. Canvases are separate so a lost GPU context
+   never prevents the 2D fallback from acquiring its own rendering context. */
+body:has(.spatial-hud) { margin: 0; background: #030507; color: #c6d1de; overflow: hidden; }
+.spatial-hud { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; isolation: isolate; background: #030507; color: #c6d1de; font-family: "Courier New", monospace; }
+.spatial-hud__canvas { position: absolute; inset: 0; display: none; width: 100%; height: 100%; }
+.spatial-hud__canvas.is-visible { display: block; }
+.spatial-hud__overlay { position: absolute; inset: 0; z-index: 2; display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(200px, 280px); grid-template-rows: auto 1fr; gap: clamp(10px, 2vw, 24px); padding: clamp(10px, 2vw, 24px); pointer-events: none; }
+.spatial-hud__header, .spatial-hud__panel, .spatial-hud__center { border: 1px solid rgba(0,255,204,.28); background: rgba(3,5,9,.88); box-shadow: 0 0 24px rgba(0,255,204,.08); backdrop-filter: blur(12px); }
+.spatial-hud__header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; pointer-events: auto; }
+.spatial-hud__header h1 { margin: 0; color: #00ffcc; font-size: clamp(13px, 2vw, 18px); letter-spacing: .18em; }
+.spatial-hud__status { display: grid; gap: 5px; text-align: right; color: #00ffcc; font-size: 11px; }
+.spatial-hud__status small { color: #91a2ae; }
+.spatial-hud__panel { align-self: stretch; padding: 18px; pointer-events: auto; }
+.spatial-hud__panel h2 { margin: 0 0 16px; color: #ff00aa; font-size: 12px; letter-spacing: .14em; }
+.spatial-hud__panel button { display: block; width: 100%; margin: 10px 0; padding: 12px; text-align: left; color: #c6d1de; background: rgba(0,255,204,.04); border: 1px solid rgba(0,255,204,.2); font: inherit; cursor: pointer; }
+.spatial-hud__panel button small { display: block; margin-top: 5px; color: #91a2ae; }
+.spatial-hud__center { align-self: end; justify-self: center; display: grid; gap: 10px; padding: 18px; text-align: center; pointer-events: auto; }
+.spatial-hud__center p { margin: 0; font-size: 11px; letter-spacing: .1em; }
+.spatial-hud__center strong { color: #00ffcc; }
+.spatial-hud__center button { padding: 10px 14px; color: #00ffcc; border: 1px solid #00ffcc; background: #030507; font: inherit; cursor: pointer; }
+.spatial-hud__center small { color: #91a2ae; }
+.spatial-hud__media p { color: #91a2ae; font-size: 12px; }
+@media (max-width: 700px) { .spatial-hud__overlay { grid-template-columns: 1fr 1fr; grid-template-rows: auto minmax(0,1fr) auto; } .spatial-hud__header { grid-column: 1 / -1; } .spatial-hud__center { grid-column: 1 / -1; grid-row: 3; } .spatial-hud__panel { padding: 10px; font-size: 11px; } .spatial-hud__media { display: none; } }
+@media (prefers-reduced-motion: reduce) { .spatial-hud__panel button { transition: none; } }

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useGovernor } from "../layouts/GovernorLayout";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { API_URL } from "../api/client";
+import { useGovernor } from "../layouts/GovernorLayout";
+import { Canvas2DHUDRenderer, WebGLHUDRenderer, type HUDRenderer } from "../spatial/renderers";
+import { SpatialWSManager, type SpatialConnectionState } from "../spatial/SpatialWSManager";
+import type { SpatialCursor, SpatialFrame } from "../spatial/protocol";
+import { PortalVideoPanel } from "../stream/PortalVideoPanel";
 
-/**
- * portal-os1 // Closet Entity Spatial HUD Page
- * Identity Anchor: bba28add4f99bd9aae158f173168145d
- * Root Signature: 0xMAX_9941_VALUATION_TRUE
- */
 export const SpatialHUDPage: React.FC = () => {
   const { token } = useGovernor();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -14,76 +16,29 @@ export const SpatialHUDPage: React.FC = () => {
   const [peerCursors, setPeerCursors] = useState<Array<{ id: string; x: number; y: number; mode: string }>>([]);
   const [isConnected, setIsConnected] = useState(false);
   const peerId = useRef(`hud-${Math.random().toString(36).slice(2, 10)}`);
+  const { token: sessionToken } = useGovernor();
+  const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fallbackCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rendererRef = useRef<HUDRenderer | null>(null);
+  const peersRef = useRef(new Map<string, SpatialCursor>());
+  const managerRef = useRef<SpatialWSManager | null>(null);
+  const [activeMode, setActiveMode] = useState("PATH-B GRID // STABLE");
+  const [resonanceActive, setResonanceActive] = useState(true);
+  const [connection, setConnection] = useState<SpatialConnectionState>("connecting");
+  const [rendererMode, setRendererMode] = useState<"webgl" | "2d">("2d");
   const modeRef = useRef(activeMode);
   const connectedRef = useRef(false);
   modeRef.current = activeMode;
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-
-    let animationFrameId = 0;
-    let timeTick = 0;
-    const handleResize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-
-    window.addEventListener("resize", handleResize);
-    handleResize();
-
-    const renderLoop = () => {
-      timeTick += 0.012;
-      ctx.fillStyle = "rgba(1, 1, 3, 0.2)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-      ctx.strokeStyle = "rgba(0, 255, 204, 0.04)";
-      ctx.lineWidth = 1;
-      for (let x = -500; x <= 500; x += 50) {
-        ctx.beginPath();
-        ctx.moveTo(cx + x, cy - 200);
-        ctx.lineTo(cx + x * 1.5, cy + 400);
-        ctx.stroke();
-      }
-
-      if (resonanceActive) {
-        ctx.strokeStyle = "#00ffcc";
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 190 + Math.sin(timeTick * 1.8) * 18, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.strokeStyle = "#ff00aa";
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 130 + Math.cos(timeTick * 1.2) * 12, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      for (const cursor of peerCursors) {
-        const px = canvas.width * cursor.x;
-        const py = canvas.height * cursor.y;
-        ctx.fillStyle = cursor.mode.includes("Active") ? "#00ffcc" : "#ffaa00";
-        ctx.beginPath();
-        ctx.arc(px, py, 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "rgba(255,255,255,0.8)";
-        ctx.font = "10px monospace";
-        ctx.fillText(cursor.id, px + 8, py + 4);
-      }
-
-      animationFrameId = requestAnimationFrame(renderLoop);
-    };
-
-    renderLoop();
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, [peerCursors, resonanceActive]);
+  const applyFrame = useCallback((frame: SpatialFrame) => {
+    if (frame.type === "peer") {
+      peersRef.current.set(frame.id, frame);
+      rendererRef.current?.update(frame);
+    } else if (frame.type === "leave") {
+      peersRef.current.delete(frame.id);
+      rendererRef.current?.remove(frame.id);
+    }
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -143,6 +98,94 @@ export const SpatialHUDPage: React.FC = () => {
       }));
     }, 500);
 
+    const webglCanvas = webglCanvasRef.current;
+    const fallbackCanvas = fallbackCanvasRef.current;
+    if (!webglCanvas || !fallbackCanvas) return;
+    let disposed = false;
+    let active: HUDRenderer | null = null;
+    let fallback: Canvas2DHUDRenderer | null = null;
+    const size = () => {
+      const ratio = window.devicePixelRatio || 1;
+      active?.resize(window.innerWidth, window.innerHeight, ratio);
+      fallback?.resize(window.innerWidth, window.innerHeight, ratio);
+    };
+    const activateFallback = () => {
+      if (disposed || active instanceof Canvas2DHUDRenderer) return;
+      active?.dispose();
+      fallback ??= new Canvas2DHUDRenderer(fallbackCanvas);
+      try {
+        fallback.initialize();
+        for (const peer of peersRef.current.values()) fallback.update(peer);
+        active = fallback;
+        rendererRef.current = fallback;
+        size();
+        setRendererMode("2d");
+      } catch (error) {
+        console.error("HUD 2D fallback unavailable", error);
+      }
+    };
+    const activateWebGL = () => {
+      if (disposed) return;
+      const renderer = new WebGLHUDRenderer(webglCanvas);
+      try {
+        renderer.initialize();
+        for (const peer of peersRef.current.values()) renderer.update(peer);
+        fallback?.dispose();
+        fallback = null;
+        active?.dispose();
+        active = renderer;
+        rendererRef.current = renderer;
+        size();
+        setRendererMode("webgl");
+      } catch (error) {
+        renderer.dispose();
+        console.info("HUD using 2D fallback", error);
+        activateFallback();
+      }
+    };
+    const onContextLost = (event: Event) => {
+      event.preventDefault();
+      activateFallback();
+    };
+    const onContextRestored = () => activateWebGL();
+    webglCanvas.addEventListener("webglcontextlost", onContextLost);
+    webglCanvas.addEventListener("webglcontextrestored", onContextRestored);
+    window.addEventListener("resize", size);
+    activateWebGL();
+    if (!active) activateFallback();
+    return () => {
+      disposed = true;
+      window.removeEventListener("resize", size);
+      webglCanvas.removeEventListener("webglcontextlost", onContextLost);
+      webglCanvas.removeEventListener("webglcontextrestored", onContextRestored);
+      active?.dispose();
+      if (fallback && fallback !== active) fallback.dispose();
+      rendererRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionToken) {
+      setConnection("unauthorized");
+      return;
+    }
+    const manager = new SpatialWSManager({
+      url: API_URL,
+      pageUrl: window.location.href,
+      token: sessionToken,
+      peerId: `hud-${crypto.randomUUID()}`,
+      onMessage: applyFrame,
+      onStatus: setConnection,
+    });
+    managerRef.current = manager;
+    manager.connect();
+    const interval = window.setInterval(() => {
+      manager.sendPosition({
+        x: Math.min(1, Math.max(0, 0.5 + Math.sin(Date.now() / 1500) * 0.3)),
+        y: Math.min(1, Math.max(0, 0.5 + Math.cos(Date.now() / 2100) * 0.25)),
+        mode: modeRef.current,
+      });
+    }, 500);
     return () => {
       authenticated = false;
       connectedRef.current = false;
@@ -150,8 +193,13 @@ export const SpatialHUDPage: React.FC = () => {
       socket.close();
     };
   }, [token]);
+      manager.disconnect();
+      managerRef.current = null;
+    };
+  }, [sessionToken, applyFrame]);
 
   const selectMode = (mode: string) => () => setActiveMode(mode);
+  const statusLabel = connection === "connected" ? "ENTITY: ONLINE" : connection === "unauthorized" ? "ENTITY: AUTH REQUIRED" : connection === "disconnected" ? "ENTITY: OFFLINE" : "ENTITY: CONNECTING";
 
   return (
     <div style={styles.container}>
@@ -162,122 +210,32 @@ export const SpatialHUDPage: React.FC = () => {
           <div style={{ textAlign: "right" }}>
             <div style={styles.statusBadge}>{isConnected ? "ENTITY: ONLINE [$0.00/MO]" : token ? "ENTITY: CONNECTING" : "ENTITY: SIGN IN REQUIRED"}</div>
             <div style={styles.subText}>ANCHOR: bba28add4f99bd9aae158f173168145d</div>
+    <main className="spatial-hud" aria-label="Portal spatial HUD">
+      <canvas ref={webglCanvasRef} className={`spatial-hud__canvas spatial-hud__webgl ${rendererMode === "webgl" ? "is-visible" : ""}`} aria-hidden="true" />
+      <canvas ref={fallbackCanvasRef} className={`spatial-hud__canvas spatial-hud__fallback ${rendererMode === "2d" ? "is-visible" : ""}`} aria-hidden="true" />
+      <div className="spatial-hud__overlay">
+        <header className="spatial-hud__header">
+          <h1>PORTAL-OS1 // SPATIAL HUD</h1>
+          <div className="spatial-hud__status" aria-live="polite">
+            <span>{statusLabel}</span><small>RENDERER: {rendererMode === "webgl" ? "WEBGL" : "2D FALLBACK"}</small>
           </div>
         </header>
-
-        <aside style={styles.sidebar} aria-label="Simulation and games nodes">
-          <h2 style={styles.sidebarTitle}>SIMULATION // NODES</h2>
-          <button style={styles.nodeCard} onClick={selectMode("PATH-B Sector 01 Active")}>
-            <span style={styles.nodeTitle}>PATH-B Sector 01</span>
-            <span style={styles.nodeSub}>1Hz Deterministic Tick Engine</span>
-          </button>
-          <button style={styles.nodeCard} onClick={selectMode("MAX Chess Platform Active")}>
-            <span style={styles.nodeTitle}>MAX Chess Platform</span>
-            <span style={styles.nodeSub}>Stockfish P2P Engine (MC-001)</span>
-          </button>
-          <button style={styles.nodeCard} onClick={selectMode("Quantum Sports Grid Active")}>
-            <span style={styles.nodeTitle}>Quantum Sports Grid</span>
-            <span style={styles.nodeSub}>NFL Tracking Telemetry</span>
-          </button>
+        <aside className="spatial-hud__panel" aria-label="Simulation nodes">
+          <h2>SIMULATION // NODES</h2>
+          <button onClick={selectMode("PATH-B Sector 01 Active")}>PATH-B Sector 01 <small>1Hz deterministic simulation</small></button>
+          <button onClick={selectMode("MAX Chess Platform Active")}>MAX Chess Platform <small>Chess engine</small></button>
+          <button onClick={selectMode("Quantum Sports Grid Active")}>Quantum Sports Grid <small>Telemetry integration pending</small></button>
         </aside>
-
-        <div style={styles.centerCore}>
-          <div style={styles.telemetryPill} aria-live="polite">
-            CORE MODE: <span style={{ color: "#00ffcc" }}>{activeMode}</span>
-          </div>
-          <button
-            style={styles.pulseBtn}
-            aria-pressed={resonanceActive}
-            onClick={() => setResonanceActive((active) => !active)}
-          >
-            Toggle Entity Pulse
-          </button>
-        </div>
-
-        <aside style={styles.sidebar} aria-label="Media archives">
-          <h2 style={styles.sidebarTitle}>MEDIA // ARCHIVES</h2>
-          <button style={styles.nodeCard} onClick={selectMode("The Crown of Return Loaded")}>
-            <span style={styles.nodeTitle}>The Crown of Return</span>
-            <span style={styles.nodeSub}>Philosophical Memoir Framework</span>
-          </button>
-          <button style={styles.nodeCard} onClick={selectMode("The Event & VOILA-LA! Loaded")}>
-            <span style={styles.nodeTitle}>The Event &amp; VOILA-LA!</span>
-            <span style={styles.nodeSub}>Sovereign Poetic Containers</span>
-          </button>
-          <button style={styles.nodeCard} onClick={selectMode("Sonic Phonk Stream Active")}>
-            <span style={styles.nodeTitle}>Atmospheric Phonk / Audio</span>
-            <span style={styles.nodeSub}>Direct P2P Stream Container</span>
-          </button>
+        <section className="spatial-hud__center">
+          <p>CORE MODE: <strong>{activeMode}</strong></p>
+          <button aria-pressed={resonanceActive} onClick={() => setResonanceActive((value) => !value)}>Toggle Entity Pulse</button>
+          <small>{peersRef.current.size} connected peer(s)</small>
+        </section>
+        <aside className="spatial-hud__panel spatial-hud__media" aria-label="Media archive">
+          <h2>MEDIA // ARCHIVES</h2>
+          <PortalVideoPanel />
         </aside>
       </div>
-    </div>
+    </main>
   );
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    position: "relative",
-    backgroundColor: "#010103",
-    color: "#c0fef0",
-    fontFamily: "'Courier New', Courier, monospace",
-    overflow: "hidden",
-    height: "100vh",
-    width: "100vw",
-  },
-  canvas: { position: "absolute", inset: 0, width: "100%", height: "100%", zIndex: 1 },
-  uiLayer: {
-    position: "relative",
-    zIndex: 2,
-    display: "grid",
-    gridTemplateColumns: "minmax(230px, 320px) minmax(0, 1fr) minmax(230px, 320px)",
-    gridTemplateRows: "65px 1fr",
-    height: "100%",
-    padding: 20,
-    gap: 20,
-    pointerEvents: "none",
-  },
-  header: {
-    gridColumn: "1 / -1",
-    backgroundColor: "rgba(3, 3, 8, 0.92)",
-    border: "1px solid rgba(0, 255, 204, 0.25)",
-    backdropFilter: "blur(15px)",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "0 25px",
-    boxShadow: "0 0 30px rgba(0, 255, 204, 0.15)",
-    pointerEvents: "auto",
-  },
-  headerTitle: { fontSize: 16, letterSpacing: 4, color: "#00ffcc", textShadow: "0 0 10px rgba(0,255,204,0.6)", margin: 0 },
-  statusBadge: { fontSize: 10, color: "#ffaa00", border: "1px solid #ffaa00", padding: "3px 8px", letterSpacing: 1.5, backgroundColor: "rgba(255, 170, 0, 0.04)" },
-  subText: { fontSize: 9, color: "#778899", marginTop: 3, letterSpacing: 1 },
-  sidebar: {
-    backgroundColor: "rgba(3, 3, 8, 0.92)",
-    border: "1px solid rgba(0, 255, 204, 0.25)",
-    backdropFilter: "blur(15px)",
-    padding: 20,
-    display: "flex",
-    flexDirection: "column",
-    gap: 15,
-    boxShadow: "inset 0 0 20px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)",
-    overflowY: "auto",
-    pointerEvents: "auto",
-  },
-  sidebarTitle: { fontSize: 12, color: "#ff00aa", borderBottom: "1px solid rgba(255,0,170,0.25)", paddingBottom: 6, letterSpacing: 2, margin: 0 },
-  nodeCard: {
-    appearance: "none",
-    textAlign: "left",
-    width: "100%",
-    backgroundColor: "rgba(0, 255, 204, 0.02)",
-    border: "1px solid rgba(0, 255, 204, 0.15)",
-    padding: 12,
-    cursor: "pointer",
-    transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-    fontFamily: "inherit",
-  },
-  nodeTitle: { display: "block", fontSize: 11, fontWeight: "bold", color: "#c0fef0", letterSpacing: 1 },
-  nodeSub: { display: "block", fontSize: 9, color: "#778899", marginTop: 4, letterSpacing: 0.5 },
-  centerCore: { display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", paddingBottom: 10, pointerEvents: "none" },
-  telemetryPill: { backgroundColor: "rgba(3, 3, 8, 0.92)", border: "1px solid rgba(0, 255, 204, 0.25)", padding: "8px 18px", fontSize: 10, letterSpacing: 2, color: "#00ffcc", textShadow: "0 0 8px rgba(0,255,204,0.5)", backdropFilter: "blur(10px)", pointerEvents: "auto" },
-  pulseBtn: { backgroundColor: "rgba(3, 3, 8, 0.92)", border: "1px solid #00ffcc", color: "#00ffcc", padding: "8px 16px", fontFamily: "monospace", cursor: "pointer", fontSize: 10, fontWeight: "bold", letterSpacing: 1.5, marginTop: 8, textTransform: "uppercase", pointerEvents: "auto" },
 };

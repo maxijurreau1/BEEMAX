@@ -52,7 +52,8 @@ export class AdapterRegistry {
       : registrationOrManifest;
     const state = "kind" in registrationOrManifest ? registrationOrManifest.state : "CONNECTED";
     const adapter = "kind" in registrationOrManifest ? registrationOrManifest.adapter : handler;
-    const effectiveHandler = handler ?? (typeof adapter === "function" ? adapter : undefined);
+    const effectiveHandler: ((...args: any[]) => any) | undefined =
+      handler ?? (typeof adapter === "function" ? (adapter as (...args: any[]) => any) : undefined);
 
     if (!manifest.id.trim()) throw new TypeError("adapter id is required");
     if (!manifest.version.trim()) throw new TypeError("adapter version is required");
@@ -73,11 +74,14 @@ export class AdapterRegistry {
     if (!existing) throw new Error(`Adapter not found: ${registration.id}`);
     if (registration.identityAnchor !== SOVEREIGN_IDENTITY_ANCHOR)
       throw new Error("Adapter rejected: invalid identity anchor");
+    const nextHandler = typeof registration.adapter === "function"
+      ? registration.adapter as (...args: any[]) => any
+      : undefined;
     this.registrations.set(registration.id, Object.freeze({
       manifest: Object.freeze({ ...existing.manifest, type: registration.kind, identityAnchor: registration.identityAnchor }),
       state: registration.state,
       adapter: registration.adapter,
-      ...(typeof registration.adapter === "function" ? { handler: registration.adapter as (...args: any[]) => any } : {}),
+      ...(nextHandler ? { handler: nextHandler } : {}),
     }));
   }
 

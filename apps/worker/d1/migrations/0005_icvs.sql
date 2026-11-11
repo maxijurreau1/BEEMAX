@@ -7,7 +7,9 @@ CREATE TABLE products_icvs (
  revenue REAL NOT NULL DEFAULT 0 CHECK(revenue >= 0),
  status TEXT NOT NULL DEFAULT 'On track' CHECK(status IN ('On track','Attention','Paused'))
 );
-INSERT INTO products_icvs SELECT * FROM products;
+-- Map the original six product columns explicitly; new columns use their defaults.
+INSERT INTO products_icvs (id,name,description,stage,score,updated_at)
+SELECT id,name,description,stage,score,updated_at FROM products;
 -- Rebuild references as well: D1 enforces foreign keys during table replacement.
 CREATE TABLE approvals_icvs (
  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products_icvs(id), action TEXT NOT NULL,
@@ -15,7 +17,9 @@ CREATE TABLE approvals_icvs (
  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','overridden')),
  decided_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, decision_note TEXT NOT NULL DEFAULT ''
 );
-INSERT INTO approvals_icvs SELECT * FROM approvals;
+-- Preserve the original approval fields; decision_note uses its default.
+INSERT INTO approvals_icvs (id,product_id,action,priority,risk,status,decided_at,created_at)
+SELECT id,product_id,action,priority,risk,status,decided_at,created_at FROM approvals;
 CREATE TABLE factory_runs_icvs (
  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products_icvs(id),
  status TEXT NOT NULL CHECK(status IN ('running','blocked','completed')),

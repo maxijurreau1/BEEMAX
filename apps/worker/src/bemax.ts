@@ -1,10 +1,10 @@
-import { readUniverse } from "./universe-api";
-import { staffIdentity } from "./access";
-import { providers as listProviders } from "./providers";
-import type { Env } from "./types";
-import { substrateApi } from "./substrate-api";
+import { readUniverse } from "./universe-api.js";
+import { staffIdentity } from "./access.js";
+import { providers as listProviders } from "./providers.js";
+import type { Env } from "./types.js";
+import { substrateApi } from "./substrate-api.js";
 
-export { bemaxApi } from "./bemax/index";
+export { bemaxApi } from "./bemax/index.js";
 
 const json = (value: unknown, status = 200) =>
   Response.json(value, {
@@ -38,7 +38,7 @@ export async function compatibilityApi(
   if (path === "/api/bemax/risks") {
     const alias = new URL(request.url);
     alias.pathname = "/api/bemax/risk";
-    return (await (await import("./bemax/index")).bemaxApi(
+    return (await (await import("./bemax/index.js")).bemaxApi(
       new Request(alias, request),
       env,
     )) ?? json({ error: "BEMAX route not found" }, 404);
@@ -62,6 +62,7 @@ export async function compatibilityApi(
       })),
     });
   }
+
   if (path === "/api/providers/models" && request.method === "GET") {
     const providers = await listProviders(env);
     return json({
@@ -75,6 +76,7 @@ export async function compatibilityApi(
       ),
     });
   }
+
   if (path.startsWith("/api/providers"))
     return json({ error: "Provider route not found" }, 404);
 

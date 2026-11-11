@@ -6,6 +6,7 @@ const links = [
   ["/portal/ecosystem", "globe", "MAX Universe"],
   ["/portal/institute", "governance", "Institute & USS"],
   ["/portal/intelligence", "spark", "Intelligence"],
+  ["/hud", "spark", "Spatial HUD"],
   ["/portal/twin", "portfolio", "Digital twin"],
   ["/portal/marketplace", "products", "Marketplace"],
   ["/portal/dashboard", "dashboard", "Dashboard"],
@@ -54,7 +55,13 @@ export function Sidebar() {
               role === "Governor",
           )
           .map(([to, icon, label]) => (
-            <NavLink key={to} to={to} end={to === "/"}>
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              // The HUD is a standalone screen; reload to discard the portal shell entirely.
+              reloadDocument={to === "/hud"}
+            >
               <Icon name={icon} />
               {label}
               {label === "Dashboard" && <span className="nav-active-dot" />}

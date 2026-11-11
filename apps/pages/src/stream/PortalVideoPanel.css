@@ -1,0 +1,48 @@
+.portal-video {
+  overflow: hidden;
+  border: 1px solid rgba(0, 255, 204, 0.28);
+  background: rgba(3, 5, 9, 0.94);
+  color: #c6d1de;
+  box-shadow: 0 0 24px rgba(0, 255, 204, 0.08);
+}
+.portal-video__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  color: #00ffcc;
+  font: 11px "Courier New", monospace;
+  letter-spacing: 0.12em;
+}
+.portal-video__badge { color: #ffbf5b; }
+.portal-video__media {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  background: #000;
+}
+.portal-video__message {
+  display: grid;
+  min-height: 120px;
+  place-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: #aab8c5;
+  text-align: center;
+  font: 12px "Courier New", monospace;
+}
+.portal-video__message button {
+  padding: 8px 12px;
+  border: 1px solid #00ffcc;
+  color: #00ffcc;
+  background: #030507;
+  font: inherit;
+  cursor: pointer;
+}
+.portal-video__expiry {
+  display: block;
+  padding: 6px 12px;
+  color: #91a2ae;
+  font-size: 10px;
+}

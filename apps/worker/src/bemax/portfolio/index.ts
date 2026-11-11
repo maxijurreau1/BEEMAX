@@ -13,13 +13,13 @@ export class PortfolioService {
   constructor(private readonly env: any) {}
 
   async getSnapshot(): Promise<PortfolioSnapshot> {
-    const { readUniverse } = await import("../../universe-api");
+    const { readUniverse } = await import("../../universe-api.js");
     const universe = await readUniverse(this.env);
     const products = universe.products ?? [];
 
-    const approvals = await this.env.DB.prepare(
+    const approvals = (await this.env.DB.prepare(
       `SELECT COUNT(*) AS count FROM approvals WHERE status = 'pending'`,
-    ).first<{ count: number }>();
+    ).first()) as { count: number } | null;
 
     return {
       totalProducts: products.length,
