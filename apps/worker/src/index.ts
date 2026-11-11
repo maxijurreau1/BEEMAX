@@ -77,6 +77,15 @@ app.get('/api/catalog', publicRateLimiter, async (c) => {
   }
 })
 
+app.get('/api/marketplace/items', publicRateLimiter, async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM marketplace_items').all()
+    return c.json(results)
+  } catch {
+    return c.json({ error: 'Failed to fetch marketplace items' }, 500)
+  }
+})
+
 // ==========================================
 // PROTECTED NODE TELEMETRY ENDPOINT (QAL Required)
 // ==========================================
