@@ -142,8 +142,7 @@ app.post('/api/catalog/mint', qalAuthMiddleware, async (c) => {
   }
 })
 
-// Catch unmatched API requests before the asset fallback. Public API routes above
-// remain public; protected routes enforce their own route-scoped authentication.
+// Catch unmatched API requests before the asset fallback.
 app.all('/api', (c) => c.json({ error: 'API route not found' }, 404))
 app.all('/api/*', (c) => c.json({ error: 'API route not found' }, 404))
 
