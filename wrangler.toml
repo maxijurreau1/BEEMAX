@@ -29,6 +29,6 @@ new_sqlite_classes = ["ProductFactoryActor", "InstantSpaceDurableObject", "Micro
 # Cloudflare D1 database and versioned Worker migrations
 [[d1_databases]]
 binding = "DB"
-database_name = "beemax-db"
-database_id = "REPLACE_WITH_YOUR_CLOUDFLARE_D1_DATABASE_ID"
+database_name = "beemax-production-db"
+database_id = "5a8e3def-a8ef-4fda-907f-20bc5f24a501"
 migrations_dir = "apps/worker/d1/migrations"
