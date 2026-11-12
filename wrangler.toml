@@ -1,39 +1,31 @@
-name = "beemax"
-main = "apps/worker/src/index.ts"
-compatibility_date = "2026-10-26"
-account_id = "cfbebee3f0343be6fb2ed557bd4da8a1"
+#:schema node_modules/wrangler/config-schema.json
+name = "beemax-portal-os1"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
-ENV = "production"
 ENVIRONMENT = "production"
-ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://portal-os1.pages.dev,https://portal-os1-969.pages.dev,https://max-games.pages.dev"
-ICVS_ENABLED = "true"
-MAX_PROCESS_HEAP_BYTES = 2097152 # 2MB Hard Cap
+PROTOCOL_VERSION = "DAT-JURREAUISM-v1"
+PRE_TIER_INDEX = "IDX-PRETIER-001"
+ISOLATE_MEMORY_LIMIT_MB = "128"
 
+# ----------------------------------------------------------------------------
+# 1. DURABLE OBJECTS COGNITIVE MESH (SQLite-Backed ICV Actors)
+# ----------------------------------------------------------------------------
+[[durable_objects.bindings]]
+name = "BEEMAX_MESH_STATE"
+class_name = "CognitiveNodeActor"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CognitiveNodeActor"]
+
+# ----------------------------------------------------------------------------
+# 2. UNIFIED CLOUDFLARE D1 DATABASE (Microkernel Logs + Sovereign Marketplace)
+# ----------------------------------------------------------------------------
 [[d1_databases]]
 binding = "DB"
-database_name = "portal-os1-production1-db"
-database_id = "73b4f0ee-5eb1-4ccd-9b50-1ec9ab39532b"
-migrations_dir = "apps/worker/d1/migrations"
-
-[durable_objects]
-bindings = [
-  { name = "MICROKERNEL_ACTOR", class_name = "MicrokernelProcessActor" },
-  { name = "FACTORY_ACTOR", class_name = "ProductFactoryActor" },
-  { name = "INSTANT_SPACE", class_name = "InstantSpaceDurableObject" }
-]
-
-[exports.MicrokernelProcessActor]
-type = "durable-object"
-storage = "sqlite"
-
-[exports.ProductFactoryActor]
-type = "durable-object"
-storage = "sqlite"
-
-[exports.InstantSpaceDurableObject]
-type = "durable-object"
-storage = "sqlite"
-
-[triggers]
-crons = ["* * * * *"]
+database_name = "beemax-db"
+database_id = "REPLACE_WITH_YOUR_CLOUDFLARE_D1_DATABASE_ID"
+migrations_dir = "src/database"

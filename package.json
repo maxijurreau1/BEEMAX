@@ -1,44 +1,22 @@
 {
-  "name": "portal-os1",
+  "name": "beemax-portal-os1",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.1.0",
-  "workspaces": [
-    "apps/pages",
-    "apps/worker",
-    "max-core",
-    "apps/marketplace"
-  ],
-  "engines": {
-    "node": ">=22.12.0"
-  },
+  "description": "Edge-Native Distributed Microkernel, Multi-Agent Virtualization & Sovereign DAT Marketplace Layer",
+  "main": "src/index.ts",
   "scripts": {
-    "dev:pages": "npm run dev -w @portal/pages",
-    "dev:worker": "wrangler dev --port 8787",
-    "build": "npm run build -w @portal/pages && npm run build -w @max/marketplace",
-    "build:marketplace": "npm run build -w @max/marketplace",
-    "typecheck": "npm run typecheck --workspaces",
-    "test": "vitest run && npm run test -w max-core",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local",
-    "db:seed:local": "wrangler d1 execute DB --local --file apps/worker/d1/seed.sql",
-    "deploy:worker": "wrangler deploy",
-    "deploy:pages": "npm run build && wrangler pages deploy apps/pages/dist --project-name portal-os1",
-    "dev:marketplace": "npm run dev -w @max/marketplace",
-    "dev:marketplace-api": "wrangler dev --config wrangler.marketplace.toml --port 8788 --var MARKETPLACE_ORIGIN:http://localhost:5174 --inspector-port 9231",
-    "deploy:marketplace:worker": "wrangler deploy --config wrangler.marketplace.toml",
-    "deploy:marketplace:pages": "npm run build:marketplace && wrangler pages deploy apps/marketplace/dist --project-name max-games"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 execute beemax-db --local --file=./src/database/schema.sql",
+    "db:migrate:remote": "wrangler d1 execute beemax-db --remote --file=./src/database/schema.sql",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.7",
-    "@cloudflare/workers-types": "^5.20261024.1",
-    "prettier": "^3.9.10",
-    "typescript": "^5.9.3",
-    "vite": "^8.3.5",
-    "vitest": "^5.0.5",
-    "wrangler": "^4.0.0"
-  },
-  "type": "module",
-  "overrides": {
-    "undici": "^7.30.1",
-    "zod": "^4.6.7"
+    "@cloudflare/workers-types": "^4.20261001.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.90.0"
   }
 }
