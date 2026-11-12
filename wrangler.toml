@@ -1,6 +1,6 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "beemax-portal-os1"
-main = "src/index.ts"
+main = "apps/worker/src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
@@ -8,24 +8,27 @@ compatibility_flags = ["nodejs_compat"]
 ENVIRONMENT = "production"
 PROTOCOL_VERSION = "DAT-JURREAUISM-v1"
 PRE_TIER_INDEX = "IDX-PRETIER-001"
-ISOLATE_MEMORY_LIMIT_MB = "128"
 
-# ----------------------------------------------------------------------------
-# 1. DURABLE OBJECTS COGNITIVE MESH (SQLite-Backed ICV Actors)
-# ----------------------------------------------------------------------------
+# Durable Object bindings exported by apps/worker/src/index.ts
 [[durable_objects.bindings]]
-name = "BEEMAX_MESH_STATE"
-class_name = "CognitiveNodeActor"
+name = "FACTORY_ACTOR"
+class_name = "ProductFactoryActor"
+
+[[durable_objects.bindings]]
+name = "INSTANT_SPACE"
+class_name = "InstantSpaceDurableObject"
+
+[[durable_objects.bindings]]
+name = "MICROKERNEL_ACTOR"
+class_name = "MicrokernelProcessActor"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["CognitiveNodeActor"]
+new_sqlite_classes = ["ProductFactoryActor", "InstantSpaceDurableObject", "MicrokernelProcessActor"]
 
-# ----------------------------------------------------------------------------
-# 2. UNIFIED CLOUDFLARE D1 DATABASE (Microkernel Logs + Sovereign Marketplace)
-# ----------------------------------------------------------------------------
+# Cloudflare D1 database and versioned Worker migrations
 [[d1_databases]]
 binding = "DB"
 database_name = "beemax-db"
 database_id = "REPLACE_WITH_YOUR_CLOUDFLARE_D1_DATABASE_ID"
-migrations_dir = "src/database"
+migrations_dir = "apps/worker/d1/migrations"

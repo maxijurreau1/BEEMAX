@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "description": "Edge-Native Distributed Microkernel, Multi-Agent Virtualization & Sovereign DAT Marketplace Layer",
-  "main": "src/index.ts",
+  "main": "apps/worker/src/index.ts",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 execute beemax-db --local --file=./src/database/schema.sql",
-    "db:migrate:remote": "wrangler d1 execute beemax-db --remote --file=./src/database/schema.sql",
+    "dev": "wrangler dev --config wrangler.toml",
+    "deploy": "wrangler deploy --config wrangler.toml",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local --config wrangler.toml",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.toml",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
