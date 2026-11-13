@@ -6,7 +6,7 @@ account_id = "bba28add4f99bd9aae158f173168145d"
 # the Pages build calls it via VITE_API_BASE.
 
 [vars]
-MARKETPLACE_ORIGIN = "https://max-games.pages.dev"
+MARKETPLACE_ORIGIN = "https://max-games-hif.pages.dev"
 
 [[d1_databases]]
 binding = "DB"
