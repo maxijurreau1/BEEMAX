@@ -80,6 +80,15 @@ export interface Item {
   currency: string;
   creatorName: string;
   creatorSlug: string;
+  /** Optional 2D artwork image; consumers should retain a non-image fallback. */
+  previewUrl?: string;
+  /** Optional GLTF/GLB model URL for art previews. */
+  modelUrl?: string;
+  /** Enables this art item in the 3D gallery wall when supported. */
+  galleryMode?: boolean;
+  /** Art-specific display metadata, when supplied by the published release. */
+  medium?: string;
+  edition?: string;
 }
 
 export function price(item: Item) {
